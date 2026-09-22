@@ -1,0 +1,21 @@
+# Игнорировать папки сборки
+build/
+*/build/
+*/*/build/
+
+# Игнорировать папку GitLab Runner CI
+builds/
+*/builds/
+*/*/builds/
+
+
+# Игнорировать файлы сгенерированные во время сборки
+*.obj
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.o
+*.so
+*.dylib
