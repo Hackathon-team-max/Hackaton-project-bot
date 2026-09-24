@@ -8,7 +8,6 @@ builds/
 */builds/
 */*/builds/
 
-
 # Игнорировать файлы сгенерированные во время сборки
 *.obj
 *.dll
@@ -19,3 +18,14 @@ builds/
 *.o
 *.so
 *.dylib
+
+# Node.js / Vite
+node_modules/
+*/node_modules/
+dist/
+*/dist/
+
+# Секреты окружения
+.env
+*/.env
+
