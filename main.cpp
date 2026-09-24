@@ -7,6 +7,7 @@
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include "httplib.h"
+#include <map>
 
 using json = nlohmann::json;
 
@@ -17,6 +18,20 @@ const std::string SEND_METHOD = "/messages";
 // =======================================================
 
 std::string g_token;
+std::map<long long, std::string> g_userState; // user_id → состояние
+
+const std::vector<std::string> UNIVERSITIES = {
+    "МГТУ им. Н.Э. Баумана",
+    "МГУ им. М.В. Ломоносова",
+    "СПбГУ",
+    "МФТИ",
+    "НИУ ВШЭ",
+    "МГИМО",
+    "РУДН",
+    "МЭИ",
+    "МИФИ",
+    "ИТМО"
+};
 
 // ---------- libcurl ----------
 static size_t WriteCB(void* data, size_t size, size_t nmemb, std::string* out) {
@@ -67,6 +82,52 @@ std::string apiRequest(const std::string& method,
     return response;
 }
 
+// ---------- Отправка сообщения с кнопками ----------
+void sendMenu(long long userId, const std::string& text, const json& buttons) {
+    std::string path = SEND_METHOD + "?user_id=" + std::to_string(userId);
+    json body = {
+        {"text", text},
+        {"attachments", json::array({
+            {
+                {"type", "inline_keyboard"},
+                {"payload", {{"buttons", buttons}}}
+            }
+        })}
+    };
+    std::string resp = apiRequest("POST", path, body, true);
+    std::cout << "[send-menu] " << resp << "\n";
+}
+
+// ---------- Главное меню ----------
+void showMainMenu(long long userId) {
+    json buttons = json::array({
+        
+        json::array({
+            {{"type", "callback"}, {"text", "Учёба"}, {"payload", "menu:study"}},
+            {{"type", "callback"}, {"text", "Военная служба"}, {"payload", "menu:military"}}
+        }),
+        
+        json::array({
+            {{"type", "callback"}, {"text", "Работа"}, {"payload", "menu:work"}},
+            {{"type", "callback"}, {"text", "Бизнес"}, {"payload", "menu:business"}}
+        })
+    });
+    sendMenu(userId, "Выберите категорию:", buttons);
+}
+
+void showStudyMenu(long long userId) {
+    json buttons = json::array({
+        json::array({
+            {{"type", "callback"}, {"text", "Школа"}, {"payload", "study:school"}},
+            {{"type", "callback"}, {"text", "Вуз"}, {"payload", "study:university"}}
+        }),
+        json::array({
+            {{"type", "callback"}, {"text", "Назад"}, {"payload", "menu:main"}}
+        })
+    });
+    sendMenu(userId, "Учёба — выберите раздел:", buttons);
+}
+
 // ---------- Отправка сообщения ----------
 // user_id передаётся в URL, текст — в теле
 void sendMessage(long long userId, const std::string& text) {
@@ -78,34 +139,122 @@ void sendMessage(long long userId, const std::string& text) {
     std::cout << "[send] " << resp << "\n";
 }
 
-// ---------- Обработка события ----------
 void handleUpdate(const json& update) {
     std::string updateType = update.value("update_type", "");
 
-    if (updateType != "message_created") return;
-    if (!update.contains("message")) return;
+    // ===== 1. Новое сообщение от пользователя =====
+    if (updateType == "message_created") {
+        if (!update.contains("message")) return;
+        auto& msg = update["message"];
 
-    auto& msg = update["message"];
+        long long userId = 0;
+        if (msg.contains("sender") && msg["sender"].contains("user_id")) {
+            userId = msg["sender"]["user_id"];
+        } else {
+            return;
+        }
 
-    long long userId = 0;
-    if (msg.contains("sender") && msg["sender"].contains("user_id")) {
-        userId = msg["sender"]["user_id"];
-    } else {
-        std::cerr << "[warn] Нет sender.user_id\n";
+        std::string text;
+        if (msg.contains("body") && msg["body"].contains("text") && !msg["body"]["text"].is_null()) {
+            text = msg["body"]["text"].get<std::string>();
+        }
+
+        std::cout << "[in] user=" << userId << " text=" << text << "\n";
+
+        if (text == "/menu") {
+            showMainMenu(userId);
+        } 
+	else if (text == "/start") {
+	    sendMessage(userId, "Приветствуем в боте по получению социальных услуг!");
+	}
+	if (g_userState[userId] == "awaiting_university_search") {
+    	
+    	std::string query = text;
+    	std::transform(query.begin(), query.end(), query.begin(), ::tolower);
+
+    	std::vector<std::string> found;
+    	for (const auto& uni : UNIVERSITIES) {
+            std::string uniLower = uni;
+            std::transform(uniLower.begin(), uniLower.end(), uniLower.begin(), ::tolower);
+            if (uniLower.find(query) != std::string::npos) {
+                found.push_back(uni);
+            }
+        }
+
+        if (found.empty()) {
+            sendMessage(userId, "Ничего не найдено. Попробуйте другое название:");
+        } else {
+            json buttons = json::array();
+            for (const auto& uni : found) {
+                buttons.push_back(json::array({
+                    {{"type", "callback"}, {"text", uni}, {"payload", "study:university:open:" + uni}}
+                }));
+            }
+            buttons.push_back(json::array({
+                {{"type", "callback"}, {"text", "Назад"}, {"payload", "study:university"}}
+            }));
+
+            sendMenu(userId, "Найдено:", buttons);
+        }
+
+        g_userState[userId] = "";
+        return;
+    }
+	else if (!text.empty()) {
+            sendMessage(userId, "Напишите /menu для меню.");
+        }
         return;
     }
 
-    std::string text;
-    if (msg.contains("body") && msg["body"].contains("text") && !msg["body"]["text"].is_null()) {
-        text = msg["body"]["text"].get<std::string>();
-    }
+    // ===== 2. Нажатие кнопки =====
+    if (updateType == "message_callback") {
+        if (!update.contains("callback")) return;
+        auto& cb = update["callback"];
 
-    std::cout << "[in] user=" << userId << " text=" << text << "\n";
+        long long userId = 0;
+        if (cb.contains("user") && cb["user"].contains("user_id")) {
+            userId = cb["user"]["user_id"];
+        } else {
+            return;
+        }
 
-    if (text == "/start" || text == "/hello" || text == "hello") {
-        sendMessage(userId, "Привет! Я помогу с госсправками.");
-    } else if (!text.empty()) {
-        sendMessage(userId, "Эхо: " + text);
+        std::string payload = cb.value("payload", "");
+        std::cout << "[callback] user=" << userId << " payload=" << payload << "\n";
+
+        if (payload == "menu:study") {
+            showStudyMenu(userId);
+        } else if (payload == "menu:military") {
+            sendMessage(userId, "Раздел «Военная служба» — скоро тут будет меню.");
+        } else if (payload == "menu:work") {
+            sendMessage(userId, "Раздел «Работа» — скоро тут будет меню.");
+        } else if (payload == "menu:business") {
+            sendMessage(userId, "Раздел «Бизнес» — скоро тут будет меню.");
+        } 
+	else if (payload == "study:university") {
+    	    g_userState[userId] = "awaiting_university_search";
+    	    sendMessage(userId, "Введите название вуза (например, «МГТУ» или «Баумана»):");
+	}
+	else if (payload == "study:school") {
+    	    sendMessage(userId, "Раздел «Школа» — скоро.");
+	}
+	else if (payload.find("study:university:open:") == 0) {
+    	    std::string uni = payload.substr(21); // длина "study:university:open:"
+    	    std::cout << "[callback] выбран вуз: " << uni << "\n";
+
+    	    json buttons = json::array({
+            json::array({
+            	    {
+                	    {"type", "open_app"},
+                	    {"text", "Открыть справки для " + uni},
+                	    {"url", "https://ваш-мини-апп.vercel.app/?uni=" + uni}
+            	    }
+        	    })
+    	    });
+    	    sendMenu(userId, "Нажмите, чтобы открыть:", buttons);
+	    }
+	else {
+            sendMessage(userId, "Неизвестная команда: " + payload);
+        }
     }
 }
 
