@@ -3,12 +3,9 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <nlohmann/json.hpp>
 
 class ApiClient;
-
-namespace nlohmann {
-    class json;
-}
 
 class BotLogic {
 public:

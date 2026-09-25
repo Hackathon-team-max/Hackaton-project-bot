@@ -1,10 +1,7 @@
 #pragma once
 
 #include <string>
-
-namespace nlohmann {
-    class json;
-}
+#include <nlohmann/json.hpp>
 
 class ApiClient {
 public:
@@ -21,7 +18,7 @@ public:
 
 private:
     std::string token_;
-    const std::string API_BASE = "https://max.ru";
+    const std::string API_BASE = "https://platform-api2.max.ru";
     const std::string UPDATES_METHOD = "/updates";
     const std::string SEND_METHOD = "/messages";
 

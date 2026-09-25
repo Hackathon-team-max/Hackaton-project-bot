@@ -1,6 +1,6 @@
 #include "server.h"
-#include "api_client.h"
-#include "bot_logic.h"
+#include "api_client.h" 
+#include "bot_logic.h"  
 #include "httplib.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <cstdint>
 
 AppServer::AppServer(ApiClient& apiClient, BotLogic& botLogic) 
     : api_(apiClient), bot_(botLogic) {}
@@ -53,7 +54,6 @@ void AppServer::startLongPolling() {
                 path += "&marker=" + std::to_string(marker);
             }
 
-            // Создаем пустой json объект для сигнатуры метода
             nlohmann::json emptyBody;
             std::string resp = api_.apiRequest("GET", path, emptyBody, false, 60L);
 
@@ -67,7 +67,7 @@ void AppServer::startLongPolling() {
             auto data = nlohmann::json::parse(resp);
 
             if (data.contains("marker") && !data["marker"].is_null()) {
-                marker = data["marker"].get<long long>();
+                marker = data["marker"].get<int64_t>();
                 firstRequest = false;
             }
 
