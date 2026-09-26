@@ -10,6 +10,16 @@ endif()
 
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
+find_package(SQLite3 REQUIRED)
+
+add_library(database STATIC Database.cpp)
+target_compile_features(database PUBLIC cxx_std_17)
+target_include_directories(database PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+if(TARGET SQLite3::SQLite3)
+    target_link_libraries(database PRIVATE SQLite3::SQLite3)
+else()
+    target_link_libraries(database PRIVATE SQLite::SQLite3)
+endif()
 
 add_executable(max_bot 
     main.cpp 
@@ -23,6 +33,7 @@ add_executable(max_bot
 target_include_directories(max_bot PRIVATE include)
 
 target_link_libraries(max_bot PRIVATE
+    database
     CURL::libcurl
     Threads::Threads
 )
