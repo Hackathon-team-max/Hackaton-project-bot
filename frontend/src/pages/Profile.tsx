@@ -48,8 +48,21 @@ export default function Profile() {
             university_id: res.university_id,
           });
         }
+        // exists: false — БД отвечает, пользователя нет: форма остаётся пустой
       })
-      .catch((e: ApiError) => setLoadError(e.userMessage))
+      .catch((e: ApiError) => {
+        // «Пользователь не найден» = БД отвечает, но записи нет → заполняем с нуля.
+        // (Бэк может вернуть и 404, и 200 с телом {"error": "..."} — ловим оба.)
+        const notFound =
+          e.status === 404 || e.userMessage.toLowerCase().includes("не найден");
+        if (notFound) {
+          setExists(false);
+          setForm(EMPTY);
+        } else {
+          // БД недоступна (бэкенд выключен, таймаут, 5xx)
+          setLoadError(e.userMessage);
+        }
+      })
       .finally(() => setLoading(false));
   };
 
@@ -163,11 +176,12 @@ export default function Profile() {
         </div>
       )}
 
+      {/* БД недоступна — блокируем заполнение и предлагаем повторить */}
       {!loading && loadError && (
         <EmptyState
           icon="⚠️"
-          title="Не удалось загрузить профиль"
-          subtitle={loadError}
+          title="База данных недоступна"
+          subtitle={`${loadError}. Профиль нельзя заполнить, пока сервер не отвечает.`}
           action={
             <button type="button" className="btn btn-primary" onClick={loadProfile}>
               Повторить
