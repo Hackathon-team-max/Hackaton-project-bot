@@ -51,7 +51,7 @@ type RawBridge = NonNullable<Window["WebApp"]>;
 
 function getRawBridge(): RawBridge | null {
   if (typeof window === "undefined") return null;
-  return window.WebApp ?? window.MAX ?? null;
+  return window.WebApp ?? null;
 }
 
 /** initData из моста (для валидации на сервере). */
