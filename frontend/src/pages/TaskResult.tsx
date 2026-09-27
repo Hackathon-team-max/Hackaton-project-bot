@@ -1,101 +1,89 @@
-import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ApiError, getTask } from "../api/client";
-import type { Task } from "../api/types";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMaxBridge } from "../bridge/useMaxBridge";
-import { getHistory } from "../lib/history";
+import { getApplication, applicationProgress } from "../lib/history";
 import EmptyState from "../components/EmptyState";
-import { Skeleton } from "../components/Skeleton";
 
 export default function TaskResult() {
   const { id = "" } = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
   const { sendMessageToBot } = useMaxBridge();
-  const [task, setTask] = useState<Task | null>((location.state as { task?: Task })?.task ?? null);
-  const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const app = getApplication(id);
 
-  useEffect(() => {
-    if (task) return;
-    getTask(id)
-      .then(setTask)
-      .catch((e: ApiError) => setError(e.userMessage));
-  }, [id, task]);
-
-  const serviceTitle = getHistory().find((h) => h.taskId === id)?.serviceTitle || "заявка";
-
-  if (error) {
+  if (!app) {
     return (
       <div className="page">
-        <EmptyState icon="⚠️" title="Не удалось получить результат" subtitle={error} />
-        <button className="btn btn-primary btn-block" onClick={() => navigate(`/task/${id}`)}>
-          К статусу
-        </button>
+        <EmptyState
+          icon="🗂️"
+          title="Заявка не найдена"
+          subtitle="Откройте её из раздела «Мои заявки»"
+          action={
+            <Link className="btn btn-primary" to="/">
+              На главную
+            </Link>
+          }
+        />
       </div>
     );
   }
 
-  if (!task) {
-    return (
-      <div className="page">
-        <Skeleton h={64} w={64} r={32} />
-        <div style={{ height: 16 }} />
-        <Skeleton h={24} w="70%" />
-        <div style={{ height: 12 }} />
-        <Skeleton h={80} r={12} />
-      </div>
-    );
-  }
-
-  const success = task.status === "success";
+  const { progress, done, total, finished } = applicationProgress(app);
+  const missing = app.items.filter((it) => it.required && !it.done);
 
   return (
     <div className="page result-page">
-      <div className={`result-badge ${success ? "ok" : "fail"}`}>{success ? "✓" : "✕"}</div>
-      <h1 className="page-title center">{success ? "Готово!" : "Что-то пошло не так"}</h1>
+      <div className={`result-badge ${finished ? "ok" : "fail"}`}>{finished ? "✓" : "✕"}</div>
+      <h1 className="page-title center">{finished ? "Готово!" : "Не хватает документов"}</h1>
       <p className="page-sub center">
-        {success ? task.resultMessage || "Документы собраны" : task.errorMessage || "Не удалось выполнить заявку"}
+        {finished
+          ? "Все обязательные документы отмечены — заявку можно подавать"
+          : `Обязательных документов без отметки: ${missing.length}`}
       </p>
 
       <div className="card result-card">
         <div className="result-row">
-          <span>Услуга</span>
-          <strong>{serviceTitle}</strong>
+          <span>Вуз</span>
+          <strong>{app.universityName}</strong>
         </div>
         <div className="result-row">
-          <span>Задача</span>
-          <strong>#{task.id}</strong>
+          <span>Заявка</span>
+          <strong>#{app.taskId}</strong>
         </div>
         <div className="result-row">
-          <span>Статус</span>
-          <strong className={success ? "text-ok" : "text-fail"}>{success ? "Выполнено" : "Ошибка"}</strong>
+          <span>Прогресс</span>
+          <strong>
+            {done} из {total} ({progress}%)
+          </strong>
         </div>
       </div>
 
-      {success ? (
-        <>
-          {task.fileUrl && (
-            <a className="btn btn-primary btn-block" href={task.fileUrl} download>
-              Скачать документы
-            </a>
-          )}
-          <button
-            className="btn btn-secondary btn-block"
-            disabled={sent}
-            onClick={() => {
-              sendMessageToBot(`Заявка «${serviceTitle}» (${task.id}): ${task.resultMessage || "выполнена"}`);
-              setSent(true);
-            }}
-          >
-            {sent ? "Отправлено в чат ✓" : "Отправить в чат"}
-          </button>
-        </>
-      ) : (
-        <button className="btn btn-primary btn-block" onClick={() => navigate(`/service/${task.serviceId}`)}>
-          Повторить
-        </button>
+      {!finished && (
+        <section className="card">
+          <h2 className="section-title">Осталось отметить</h2>
+          <ul className="steps" style={{ marginTop: 8 }}>
+            {missing.map((it, i) => (
+              <li key={i}>{it.title}</li>
+            ))}
+          </ul>
+        </section>
       )}
+
+      <button className="btn btn-primary btn-block" onClick={() => navigate(`/task/${id}`)}>
+        К чеклисту
+      </button>
+      <button
+        className="btn btn-secondary btn-block"
+        disabled={sent}
+        onClick={() => {
+          sendMessageToBot(
+            `Заявка «${app.title}» (${app.universityName}): отмечено ${done} из ${total} документов`
+          );
+          setSent(true);
+        }}
+      >
+        {sent ? "Отправлено в чат ✓" : "Отправить в чат"}
+      </button>
 
       <Link className="link-center" to="/">
         На главную

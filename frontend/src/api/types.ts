@@ -44,3 +44,36 @@ export interface Task {
   fileUrl?: string;
   errorMessage?: string;
 }
+
+// --- Бэкенд: профиль пользователя (GET /api/user/:userId, POST /api/user/profile) ---
+
+export interface UserProfile {
+  user_id: number;
+  full_name: string;
+  address: string;
+  snils: string;
+  email: string;
+  passport: string;
+  university_id: string;
+}
+
+export type UserResponse =
+  | ({ exists: true } & UserProfile)
+  | { exists: false; user_id: number };
+
+// --- Бэкенд: документы вуза (GET /api/universities/:uniId/documents) ---
+
+export interface DocumentItem {
+  title: string;
+  description: string | null;
+  url: string | null;
+}
+
+export interface DocumentsResponse {
+  title: string;
+  university_id: string;
+  university_name: string;
+  description: string;
+  mandatory: DocumentItem[];
+  additional: DocumentItem[];
+}

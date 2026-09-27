@@ -32,11 +32,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Root />} />
           <Route path="/profile" element={<Profile />} />
-          {/* Формы услуг доступны только по прямой ссылке (через бота) */}
+          {/* Документы вуза; подача заявки — по прямой ссылке от бота */}
           <Route path="/service/:id" element={<ServiceDetail />} />
           <Route path="/task/:id" element={<TaskStatus />} />
           <Route path="/task/:id/result" element={<TaskResult />} />
-          {/* Админ-панель (для десктопа): вход по паролю из VITE_ADMIN_PASSWORD */}
+          {/* Админ-панель (для десктопа): вход по паролю из секрета ADMIN_PASSWORD */}
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/history" element={<Navigate to="/" replace />} />

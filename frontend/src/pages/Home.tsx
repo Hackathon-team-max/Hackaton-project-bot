@@ -1,54 +1,61 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getHistory, type HistoryEntry } from "../lib/history";
-import { getTask } from "../api/client";
-import type { TaskStatusValue } from "../api/types";
+import { getHistory, getApplications, applicationProgress } from "../lib/history";
+import { fetchUser, ApiError } from "../api/client";
 import { useMaxBridge } from "../bridge/useMaxBridge";
 import { useTheme } from "../lib/theme";
-import { getProfile, isProfileEmpty } from "../lib/profile";
+import { getUserId } from "../lib/session";
 import EmptyState from "../components/EmptyState";
-import { Skeleton } from "../components/Skeleton";
 
 interface Row {
-  entry: HistoryEntry;
-  status?: TaskStatusValue;
+  taskId: string;
+  title: string;
+  subtitle: string;
+  status?: "run" | "ok";
 }
 
-const STATUS_LABEL: Record<TaskStatusValue, { text: string; cls: string }> = {
-  running: { text: "В работе", cls: "run" },
-  success: { text: "Готово", cls: "ok" },
-  error: { text: "Ошибка", cls: "fail" },
+const STATUS_LABEL = {
+  run: { text: "В работе", cls: "run" },
+  ok: { text: "Готово", cls: "ok" },
 };
 
 export default function Home() {
   const { user } = useMaxBridge();
   const { theme, toggle } = useTheme();
-  const [rows, setRows] = useState<Row[] | null>(null);
+  // Данные профиля — из БД бэкенда
+  const [fullName, setFullName] = useState<string>("");
 
   useEffect(() => {
-    const entries = getHistory();
-    setRows(entries.map((entry) => ({ entry })));
-    entries.forEach(async (entry, i) => {
-      try {
-        const task = await getTask(entry.taskId);
-        setRows((prev) => {
-          if (!prev) return prev;
-          const next = [...prev];
-          next[i] = { ...next[i], status: task.status };
-          return next;
-        });
-      } catch {
-        /* ignore */
-      }
-    });
+    const userId = getUserId();
+    if (userId === null) return;
+    fetchUser(userId)
+      .then((res) => {
+        if (res.exists) setFullName(res.full_name);
+      })
+      .catch((e: ApiError) => {
+        console.warn(e.message);
+      });
   }, []);
 
-  const profile = getProfile();
-  const fullName = [profile.lastName, profile.firstName, profile.middleName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  const name = isProfileEmpty(profile) ? user?.name || "Гость" : fullName;
+  // Заявки — чеклисты документов (локальное хранилище, бэкенда пока нет)
+  const apps = getApplications();
+  const appIds = new Set(apps.map((a) => a.taskId));
+  const legacy = getHistory().filter((h) => !appIds.has(h.taskId));
+  const rows: Row[] = [
+    ...apps.map((a) => ({
+      taskId: a.taskId,
+      title: a.title,
+      subtitle: `${a.universityName} · ${new Date(a.createdAt).toLocaleString("ru-RU")}`,
+      status: applicationProgress(a).finished ? ("ok" as const) : ("run" as const),
+    })),
+    ...legacy.map((h) => ({
+      taskId: h.taskId,
+      title: h.serviceTitle,
+      subtitle: `${new Date(h.createdAt).toLocaleString("ru-RU")} · #${h.taskId}`,
+    })),
+  ];
+
+  const name = fullName.trim() || user?.name || "Гость";
   const initial = name.charAt(0).toUpperCase() || "?";
 
   return (
@@ -64,39 +71,30 @@ export default function Home() {
         <div className="avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : initial}</div>
         <div className="user-meta">
           <div className="user-name">{name}</div>
-          <div className="user-sub">Профиль · ФИО, паспорт, СНИЛС</div>
+          <div className="user-sub">Личный кабинет · профиль и ссылки</div>
         </div>
         <span className="chevron">›</span>
       </Link>
 
       <h2 className="section-title">Мои заявки</h2>
 
-      {rows === null && (
-        <div className="list">
-          <Skeleton h={72} r={12} />
-          <Skeleton h={72} r={12} />
-        </div>
-      )}
-
-      {rows !== null && rows.length === 0 && (
+      {rows.length === 0 && (
         <EmptyState
           icon="🗂️"
           title="Заявок пока нет"
-          subtitle="Подать заявку на услугу можно через бота — она появится здесь"
+          subtitle="Заявка появится здесь после подачи через бота"
         />
       )}
 
-      {rows !== null && rows.length > 0 && (
+      {rows.length > 0 && (
         <div className="list">
-          {rows.map(({ entry, status }) => {
+          {rows.map(({ taskId, title, subtitle, status }) => {
             const s = status ? STATUS_LABEL[status] : null;
             return (
-              <Link key={entry.taskId} to={`/task/${entry.taskId}`} className="card service-card">
+              <Link key={taskId} to={`/task/${taskId}`} className="card service-card">
                 <div className="service-body">
-                  <div className="service-title">{entry.serviceTitle}</div>
-                  <div className="service-desc">
-                    {new Date(entry.createdAt).toLocaleString("ru-RU")} · #{entry.taskId}
-                  </div>
+                  <div className="service-title">{title}</div>
+                  <div className="service-desc">{subtitle}</div>
                 </div>
                 {s && <span className={`pill ${s.cls}`}>{s.text}</span>}
                 <span className="chevron">›</span>

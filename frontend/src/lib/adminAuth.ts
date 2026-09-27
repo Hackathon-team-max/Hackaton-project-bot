@@ -1,4 +1,4 @@
-// Вход в админ-панель: пароль из секретного VITE_ADMIN_PASSWORD (.env),
+// Вход в админ-панель: пароль из секрета ADMIN_PASSWORD
 // флаг авторизации — в sessionStorage (заглушка до появления БД/бэкенда).
 const AUTH_KEY = "max_admin_auth";
 
@@ -11,7 +11,7 @@ export function isAdminAuthorized(): boolean {
 }
 
 export function loginAdmin(password: string): boolean {
-  const expected = import.meta.env.VITE_ADMIN_PASSWORD;
+  const expected = import.meta.env.ADMIN_PASSWORD;
   if (!expected || password !== expected) return false;
   try {
     sessionStorage.setItem(AUTH_KEY, "1");

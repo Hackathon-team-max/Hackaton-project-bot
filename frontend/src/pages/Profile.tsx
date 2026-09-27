@@ -1,35 +1,141 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { saveProfile, getProfile, type Profile as ProfileData } from "../lib/profile";
+import { fetchUser, saveProfile, fetchUniversityDocuments, ApiError } from "../api/client";
+import type { DocumentsResponse, UserProfile } from "../api/types";
+import { getUserId } from "../lib/session";
+import { UNIVERSITIES } from "../lib/universities";
 import { useTheme } from "../lib/theme";
+import EmptyState from "../components/EmptyState";
+import { Skeleton } from "../components/Skeleton";
+
+type Form = Omit<UserProfile, "user_id">;
+
+const EMPTY: Form = { full_name: "", address: "", snils: "", email: "", passport: "", university_id: "" };
 
 export default function Profile() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
-  const [profile, setProfile] = useState<ProfileData>(() => getProfile());
+  const userId = getUserId();
+
+  const [loading, setLoading] = useState(userId !== null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [exists, setExists] = useState(false);
+  const [form, setForm] = useState<Form>(EMPTY);
+
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const set = <K extends keyof ProfileData>(key: K, value: ProfileData[K]) => {
-    setProfile((p) => ({ ...p, [key]: value }));
+  // «Мои ссылки и рекомендации» — документы выбранного вуза
+  const [docs, setDocs] = useState<DocumentsResponse | null>(null);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+
+  const loadProfile = () => {
+    if (userId === null) return;
+    setLoading(true);
+    setLoadError(null);
+    fetchUser(userId)
+      .then((res) => {
+        if (res.exists) {
+          setExists(true);
+          setForm({
+            full_name: res.full_name,
+            address: res.address,
+            snils: res.snils,
+            email: res.email,
+            passport: res.passport,
+            university_id: res.university_id,
+          });
+        }
+      })
+      .catch((e: ApiError) => setLoadError(e.userMessage))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const uni = form.university_id;
+    if (!uni) {
+      setDocs(null);
+      setDocsError(null);
+      return;
+    }
+    let cancelled = false;
+    setDocsLoading(true);
+    setDocsError(null);
+    fetchUniversityDocuments(uni)
+      .then((d) => {
+        if (!cancelled) setDocs(d);
+      })
+      .catch((e: ApiError) => {
+        if (!cancelled) {
+          setDocs(null);
+          setDocsError(e.userMessage);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDocsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.university_id]);
+
+  const setField = (key: keyof Form, value: string) => {
+    setForm((f) => ({ ...f, [key]: value }));
     setSaved(false);
+    setSaveError(null);
   };
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    saveProfile(profile);
-    setSaved(true);
+    if (userId === null) return;
+    setSaving(true);
+    setSaved(false);
+    setSaveError(null);
+    try {
+      await saveProfile({ user_id: userId, ...form });
+      setExists(true);
+      setSaved(true);
+    } catch (err) {
+      setSaveError((err as ApiError).userMessage || "Не удалось сохранить профиль");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const fullName = [profile.lastName, profile.firstName, profile.middleName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  const initial = fullName.charAt(0).toUpperCase() || "?";
+  const initial = form.full_name.trim().charAt(0).toUpperCase() || "Г";
+  const linkItems = docs ? [...docs.mandatory, ...docs.additional] : [];
+
+  if (userId === null) {
+    return (
+      <div className="page">
+        <Link to="/" className="back-link">
+          ‹ На главную
+        </Link>
+        <EmptyState
+          icon="🔒"
+          title="Профиль недоступен"
+          subtitle="Откройте приложение через бота — бот передаст ваш user_id, чтобы загрузить профиль"
+          action={
+            <Link className="btn btn-primary" to="/">
+              На главную
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Профиль</h1>
+        <h1 className="page-title">Личный кабинет</h1>
         <button type="button" className="theme-toggle" onClick={toggle} aria-label="Переключить тему">
           {theme === "dark" ? "🌙" : "☀️"}
         </button>
@@ -38,82 +144,181 @@ export default function Profile() {
       <div className="card user-card profile-head">
         <div className="avatar">{initial}</div>
         <div className="user-meta">
-          <div className="user-name">{fullName || "Заполните профиль"}</div>
-          <div className="user-sub">Данные хранятся на устройстве</div>
+          <div className="user-name">{form.full_name.trim() || "Заполните профиль"}</div>
+          <div className="user-sub">
+            {exists ? "Профиль сохранён в БД" : "Профиль ещё не сохранён"} · user #{userId}
+          </div>
         </div>
       </div>
 
-      <form className="card form" onSubmit={onSubmit}>
-        <h2 className="section-title">Личные данные</h2>
-        <div className="field">
-          <label className="field-label" htmlFor="p-last">Фамилия</label>
-          <input id="p-last" value={profile.lastName} onChange={(e) => set("lastName", e.target.value)} />
+      {loading && (
+        <div className="card">
+          <Skeleton h={16} w="40%" />
+          <div style={{ height: 12 }} />
+          <Skeleton h={44} r={12} />
+          <div style={{ height: 12 }} />
+          <Skeleton h={44} r={12} />
+          <div style={{ height: 12 }} />
+          <Skeleton h={44} r={12} />
         </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-first">Имя</label>
-          <input id="p-first" value={profile.firstName} onChange={(e) => set("firstName", e.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-middle">Отчество</label>
-          <input id="p-middle" value={profile.middleName} onChange={(e) => set("middleName", e.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-birth">Дата рождения</label>
-          <input id="p-birth" type="date" value={profile.birthDate} onChange={(e) => set("birthDate", e.target.value)} />
-        </div>
+      )}
 
-        <h2 className="section-title">Документы</h2>
-        <div className="field-row">
-          <div className="field">
-            <label className="field-label" htmlFor="p-pass-s">Серия паспорта</label>
-            <input id="p-pass-s" value={profile.passportSeries} onChange={(e) => set("passportSeries", e.target.value)} />
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="p-pass-n">Номер паспорта</label>
-            <input id="p-pass-n" value={profile.passportNumber} onChange={(e) => set("passportNumber", e.target.value)} />
-          </div>
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-pass-who">Кем выдан</label>
-          <input id="p-pass-who" value={profile.passportIssuedBy} onChange={(e) => set("passportIssuedBy", e.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-pass-date">Дата выдачи</label>
-          <input id="p-pass-date" type="date" value={profile.passportIssueDate} onChange={(e) => set("passportIssueDate", e.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-snils">СНИЛС</label>
-          <input id="p-snils" value={profile.snils} onChange={(e) => set("snils", e.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-inn">ИНН</label>
-          <input id="p-inn" value={profile.inn} onChange={(e) => set("inn", e.target.value)} />
-        </div>
+      {!loading && loadError && (
+        <EmptyState
+          icon="⚠️"
+          title="Не удалось загрузить профиль"
+          subtitle={loadError}
+          action={
+            <button type="button" className="btn btn-primary" onClick={loadProfile}>
+              Повторить
+            </button>
+          }
+        />
+      )}
 
-        <h2 className="section-title">Контакты</h2>
-        <div className="field">
-          <label className="field-label" htmlFor="p-phone">Телефон</label>
-          <input id="p-phone" type="tel" value={profile.phone} onChange={(e) => set("phone", e.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-email">Email</label>
-          <input id="p-email" type="email" value={profile.email} onChange={(e) => set("email", e.target.value)} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="p-address">Адрес</label>
-          <textarea id="p-address" rows={2} value={profile.address} onChange={(e) => set("address", e.target.value)} />
-        </div>
+      {!loading && !loadError && (
+        <form className="form" onSubmit={onSubmit} noValidate>
+          <section className="card">
+            <h2 className="section-title">Личные данные</h2>
+            <div className="field">
+              <label className="field-label" htmlFor="p-full">
+                ФИО<span className="req">*</span>
+              </label>
+              <input
+                id="p-full"
+                value={form.full_name}
+                onChange={(e) => setField("full_name", e.target.value)}
+                placeholder="Иванов Иван Иванович"
+                autoComplete="name"
+              />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="p-address">
+                Адрес<span className="req">*</span>
+              </label>
+              <textarea
+                id="p-address"
+                rows={2}
+                value={form.address}
+                onChange={(e) => setField("address", e.target.value)}
+                placeholder="Город, улица, дом"
+              />
+            </div>
+          </section>
 
-        <button className="btn btn-primary btn-block" type="submit">
-          Сохранить
-        </button>
-        {saved && <div className="form-success">Профиль сохранён</div>}
-      </form>
+          <section className="card">
+            <h2 className="section-title">Документы</h2>
+            <div className="field-row">
+              <div className="field">
+                <label className="field-label" htmlFor="p-snils">
+                  СНИЛС<span className="req">*</span>
+                </label>
+                <input
+                  id="p-snils"
+                  value={form.snils}
+                  onChange={(e) => setField("snils", e.target.value)}
+                  placeholder="000-000-000 00"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="p-passport">
+                  Паспорт<span className="req">*</span>
+                </label>
+                <input
+                  id="p-passport"
+                  value={form.passport}
+                  onChange={(e) => setField("passport", e.target.value)}
+                  placeholder="00 00 000000"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <h2 className="section-title">Контакты и вуз</h2>
+            <div className="field">
+              <label className="field-label" htmlFor="p-email">
+                Email<span className="req">*</span>
+              </label>
+              <input
+                id="p-email"
+                type="email"
+                value={form.email}
+                onChange={(e) => setField("email", e.target.value)}
+                placeholder="name@example.com"
+                autoComplete="email"
+              />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="p-uni">
+                Вуз<span className="req">*</span>
+              </label>
+              <select
+                id="p-uni"
+                value={form.university_id}
+                onChange={(e) => setField("university_id", e.target.value)}
+              >
+                <option value="" disabled>
+                  Выберите вуз
+                </option>
+                {UNIVERSITIES.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </section>
+
+          {saveError && <div className="form-error">{saveError}</div>}
+          {saved && <div className="form-success">Профиль сохранён</div>}
+
+          <button className="btn btn-primary btn-block" type="submit" disabled={saving}>
+            {saving ? "Сохранение…" : "Сохранить"}
+          </button>
+        </form>
+      )}
+
+      {form.university_id && (
+        <section className="card">
+          <h2 className="section-title">Мои ссылки и рекомендации</h2>
+          <p className="page-sub">{docs?.university_name || "Документы выбранного вуза"}</p>
+          {docsLoading && (
+            <div className="list">
+              <Skeleton h={56} r={12} />
+              <Skeleton h={56} r={12} />
+            </div>
+          )}
+          {!docsLoading && docsError && <div className="form-error">{docsError}</div>}
+          {!docsLoading && !docsError && docs && (
+            <div className="list">
+              {linkItems.map((item, idx) => (
+                <div className="action-card" key={`${idx}-${item.title}`}>
+                  <div className="action-body">
+                    <div className="action-title">{item.title}</div>
+                    {item.description && <div className="user-sub">{item.description}</div>}
+                    {item.url && (
+                      <div className="action-buttons">
+                        <a className="btn btn-secondary btn-sm" href={item.url} target="_blank" rel="noreferrer">
+                          Открыть ссылку
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate("/")}>
         На главную
       </button>
-      <Link className="admin-link" to="/admin">Админ-панель</Link>
+      <Link className="admin-link" to="/admin">
+        Админ-панель
+      </Link>
     </div>
   );
 }
+

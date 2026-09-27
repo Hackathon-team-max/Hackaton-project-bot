@@ -1,8 +1,8 @@
-import type { Service, ServiceDetail, Task } from "./types";
+import type { Service, ServiceDetail, Task, UserResponse, UserProfile, DocumentsResponse } from "./types";
 import { mockServices, mockServiceDetails, mockTask, updateMockTask } from "./mocks";
 import { getCustomServices, getCustomService } from "../lib/serviceStore";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = import.meta.env.BACKEND_URL || "";
 
 export class ApiError extends Error {
   status: number;
@@ -14,11 +14,6 @@ export class ApiError extends Error {
   }
 }
 
-function getInitData(): string {
-  if (typeof window === "undefined") return "";
-  return window.WebApp?.initData ?? window.MAX?.initData ?? localStorage.getItem("initData") ?? "";
-}
-
 async function apiFetch<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -28,7 +23,6 @@ async function apiFetch<T>(path: string, init?: RequestInit, timeoutMs = 8000): 
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getInitData()}`,
         ...(init?.headers || {}),
       },
     });
@@ -43,7 +37,13 @@ async function apiFetch<T>(path: string, init?: RequestInit, timeoutMs = 8000): 
       throw new ApiError(res.status, msg);
     }
     if (res.status === 204) return undefined as T;
-    return (await res.json()) as T;
+    const data = (await res.json()) as T;
+    // Бэкенд может вернуть {"error": "..."} и с 200-м статусом
+    if (data && typeof data === "object" && "error" in data) {
+      const err = (data as { error?: unknown }).error;
+      if (typeof err === "string" && err) throw new ApiError(res.status, err);
+    }
+    return data;
   } catch (err) {
     if (err instanceof ApiError) throw err;
     if ((err as Error).name === "AbortError") throw new ApiError(408, "Сервер не отвечает, попробуйте позже");
@@ -53,7 +53,32 @@ async function apiFetch<T>(path: string, init?: RequestInit, timeoutMs = 8000): 
   }
 }
 
-// --- API ---
+// --- Реальные эндпоинты бэкенда ---
+
+/** GET /api/ping */
+export async function ping(): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>("/api/ping");
+}
+
+/** GET /api/user/:userId — данные пользователя или { exists: false } */
+export async function fetchUser(userId: number): Promise<UserResponse> {
+  return apiFetch<UserResponse>(`/api/user/${encodeURIComponent(String(userId))}`);
+}
+
+/** POST /api/user/profile — сохранение профиля в БД */
+export async function saveProfile(profile: UserProfile): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>("/api/user/profile", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
+}
+
+/** GET /api/universities/:uniId/documents — документы для поступления */
+export async function fetchUniversityDocuments(uniId: string): Promise<DocumentsResponse> {
+  return apiFetch<DocumentsResponse>(`/api/universities/${encodeURIComponent(uniId)}/documents`);
+}
+
+// --- API (заглушки до появления соответствующих эндпоинтов) ---
 
 export async function fetchServices(): Promise<Service[]> {
   let list: Service[];

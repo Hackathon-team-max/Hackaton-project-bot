@@ -3,8 +3,10 @@
 interface ImportMetaEnv {
   readonly VITE_API_TARGET?: string;
   readonly VITE_PORT?: string;
-  readonly VITE_API_BASE?: string;
-  readonly VITE_ADMIN_PASSWORD?: string;
+  // URL бэкенда, без префикса VITE_
+  readonly BACKEND_URL?: string;
+  // Пароль админ-панели, без префикса VITE_
+  readonly ADMIN_PASSWORD?: string;
 }
 
 interface ImportMeta {
