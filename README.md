@@ -386,3 +386,9 @@ target_link_libraries(database_example PRIVATE database)
 ```
 
 Затем соберите цель `database_example`. Она получает заголовки, C++17 и зависимость SQLite через цель `database`.
+
+## Лицензия
+
+Код проекта распространяется под GNU General Public License v3.0 (`GPL-3.0-only`). Полный текст приведён в [LICENSE](LICENSE).
+
+Сторонние библиотеки сохраняют собственные лицензии и уведомления об авторских правах.
