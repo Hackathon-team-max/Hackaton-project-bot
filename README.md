@@ -1,138 +1,376 @@
 # Hackaton-project-bot
 
-Проект включает frontend и C++17-сервер `max_bot`. В `server` реализован отдельный модуль SQLite для хранения пользователей.
+Проект состоит из C++17-сервера `max_bot`, React/Vite frontend и SQLite-модуля `Database`.
 
-## Сборка сервера
+- `server/main.cpp` запускает HTTP-сервер и получение событий MAX через Long Polling.
+- `server/server.cpp` содержит HTTP-обработчики; сейчас доступен `GET /api/ping`.
+- `server/Database.h` и `server/Database.cpp` предоставляют функции работы с БД.
+- `server/User.h` и `server/Document.h` описывают данные пользователей и документов.
+- `frontend/` содержит мини-приложение.
 
-Требуются:
+Модуль БД подключён к сборке сервера, но пока не вызывается из `main` или HTTP-обработчиков. Frontend уже обращается к `/api/user/:userId`, `/api/user/profile` и `/api/universities/:uniId/documents`, однако в текущем C++-сервере эти маршруты ещё не реализованы. Запросы услуг и задач используют демонстрационные данные при недоступности API или ответе 404. Для сохранения профиля в SQLite требуется связать HTTP-обработчики с `Database`; при этом API использует `full_name`, а модель БД хранит ФИО раздельно.
 
-- CMake 3.15 или новее;
-- компилятор с поддержкой C++17;
-- SQLite3 и libcurl с заголовочными файлами и библиотеками для выбранного компилятора;
-- поддержка потоков, определяемая CMake через `Threads`.
+## Развёртывание сервера
 
-Из корня репозитория:
+### Зависимости и CMake
+
+Требуются CMake 3.15+, компилятор C++17, SQLite3 и libcurl с заголовками и библиотеками. Команды ниже выполняются из корня проекта, если не указано иное.
+
+На Ubuntu/Debian установите зависимости:
 
 ```sh
-cmake -S server -B build/server
-cmake --build build/server --config Release
+sudo apt-get update
+sudo apt-get install -y build-essential cmake libsqlite3-dev libcurl4-openssl-dev ca-certificates curl
 ```
 
-Если зависимости установлены в нестандартное место, передайте их префиксы через `-DCMAKE_PREFIX_PATH="<sqlite-prefix>;<curl-prefix>"` при конфигурации. На Windows архитектура и формат библиотек должны соответствовать выбранному toolchain.
+Соберите сервер:
 
-CMake создаёт статическую библиотеку `database` и подключает её к `max_bot`. SQLite обнаруживается через `find_package(SQLite3 REQUIRED)`: используется цель `SQLite3::SQLite3`, а для старых версий CMake — `SQLite::SQLite3`. Исходники SQLite в репозитории не дублируются.
+```sh
+cmake -S server -B build/server -DCMAKE_BUILD_TYPE=Release
+cmake --build build/server --config Release --parallel
+```
 
-Для сборки только модуля после конфигурации:
+`server/CMakeLists.txt` уже настроен:
+
+- `database` — статическая библиотека из `Database.cpp`, с публичными заголовками и требованием C++17;
+- SQLite подключается через `find_package(SQLite3 REQUIRED)` и `SQLite3::SQLite3`, с поддержкой старого имени `SQLite::SQLite3`;
+- `max_bot` линкуется с `database`, `CURL::libcurl`, `Threads::Threads`, а на Windows также с `ws2_32`.
+
+Отдельная сборка библиотеки после конфигурации:
 
 ```sh
 cmake --build build/server --target database --config Release
 ```
 
-При запуске бота требуется переменная окружения `BOT_TOKEN`; порт HTTP-сервера задаётся через `PORT` и по умолчанию равен `8080`. Сам модуль базы не требует токена или подключения к сети. Пока бот и HTTP-обработчики не вызывают `Database`: файл базы создаётся только при явном создании объекта класса.
+На Windows используйте окружение выбранного компилятора, например Developer PowerShell для Visual Studio. Установленные SQLite и libcurl должны соответствовать архитектуре и toolchain. Если CMake не находит их, передайте пути к префиксам установки:
 
-## Модуль Database
-
-| Файл | Назначение |
-| --- | --- |
-| `server/User.h` | Структура пользователя |
-| `server/Database.h` | Публичный C++ интерфейс, без подключения `sqlite3.h` |
-| `server/Database.cpp` | Соединение, SQL, bind-параметры и обработка ошибок |
-| `server/CMakeLists.txt` | Сборка библиотеки и подключение зависимостей |
-
-`Database(filename)` открывает или создаёт базу и таблицу `users`. Относительный путь к файлу считается от текущей рабочей директории процесса; родительская папка должна существовать. Значение `":memory:"` создаёт базу в памяти на время жизни объекта.
-
-Соединение закрывается в деструкторе, который не выбрасывает исключений. Копирование запрещено. При ошибке конструктора соединение освобождается. Внутренняя RAII-обёртка вызывает `sqlite3_finalize` для statements, в том числе при исключениях. Все пользовательские значения передаются через bind-параметры.
-
-Если один экземпляр используется несколькими потоками, вызывающий код должен сериализовать обращения, например внешним mutex.
-
-### Данные пользователя
-
-| Поле C++ | Тип | Столбец SQLite | Содержание |
-| --- | --- | --- | --- |
-| `id` | `std::int64_t` | `id` | ID, назначаемый вызывающим кодом |
-| `lastName` | `std::string` | `last_name` | Фамилия |
-| `firstName` | `std::string` | `first_name` | Имя |
-| `patronymic` | `std::string` | `patronymic` | Отчество |
-| `address` | `std::string` | `address` | Адрес |
-| `snils` | `std::string` | `snils` | СНИЛС |
-| `email` | `std::string` | `email` | Почта |
-| `passport` | `std::string` | `passport` | Паспорт одной строкой, включая серию и номер |
-
-Текст передаётся в UTF-8. СНИЛС и паспорт хранятся строками, поэтому ведущие нули и разделители сохраняются. Пустые строки разрешены, в том числе для отсутствующего отчества. Проверки формата и уникальности СНИЛС, почты и паспорта нет.
-
-```sql
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    last_name TEXT NOT NULL,
-    first_name TEXT NOT NULL,
-    patronymic TEXT NOT NULL,
-    address TEXT NOT NULL,
-    snils TEXT NOT NULL,
-    email TEXT NOT NULL,
-    passport TEXT NOT NULL
-);
+```powershell
+cmake -S server -B build/server '-DCMAKE_PREFIX_PATH=C:/deps/sqlite;C:/deps/curl'
+cmake --build build/server --config Release --parallel
 ```
 
-`AUTOINCREMENT` не используется. `addUser` всегда явно передаёт `id`; например, допустимы `5738291` и `5000000000`.
+### Переменные окружения и запуск
 
-Модуль рассчитан на эту схему. `CREATE TABLE IF NOT EXISTS` не изменяет уже существующую таблицу; миграция старых баз, в частности с единым полем `name`, не реализована.
-
-### Методы и ошибки
-
-| Метод | Результат |
+| Переменная | Назначение |
 | --- | --- |
-| `bool addUser(const User& user)` | `true` при вставке; `false` при повторном ID, без перезаписи записи |
-| `std::optional<User> getUser(std::int64_t id)` | Пользователь или `std::nullopt`, если запись отсутствует |
-| `bool updateUser(const User& user)` | Обновляет все строковые поля по ID; `false`, если записи нет. Прежние значения также дают `true` для существующей записи |
-| `bool deleteUser(std::int64_t id)` | `true` при удалении; `false`, если записи нет |
-| `bool userExists(std::int64_t id)` | Наличие записи |
-| `std::vector<User> getAllUsers()` | Все записи без гарантии порядка; пустой вектор для пустой таблицы |
+| `BOT_TOKEN` | Обязательный токен бота MAX |
+| `PORT` | HTTP-порт; по умолчанию `8080` |
 
-Технические ошибки SQLite вызывают `std::runtime_error` с названием операции и сообщением `sqlite3_errmsg`. Например, ошибка открытия файла или блокировка базы не маскируются под отсутствие пользователя. Перед разыменованием результата `getUser` обязательно проверяйте `optional`.
+Сервер читает окружение процесса; файл `.env` самостоятельно не загружает. Для Long Polling нужен исходящий доступ к MAX API.
 
-### Пример использования
+Linux:
 
-Пример можно поместить в отдельный исполняемый файл, подключённый к CMake-цели `database`.
+```sh
+export BOT_TOKEN='YOUR_MAX_BOT_TOKEN'
+export PORT=8080
+./build/server/max_bot
+```
+
+Windows, генератор Visual Studio:
+
+```powershell
+$env:BOT_TOKEN = 'YOUR_MAX_BOT_TOKEN'
+$env:PORT = '8080'
+.\build\server\Release\max_bot.exe
+```
+
+У одноконфигурационных генераторов Windows файл обычно находится в `build/server/max_bot.exe`.
+
+Сервер слушает `0.0.0.0:8080`. В другом терминале можно проверить доступность:
+
+```sh
+curl http://127.0.0.1:8080/api/ping
+```
+
+Ожидаемый ответ: `{"ok":true}`. Этот маршрут подтверждает доступность HTTP-сервера, но не подключение к MAX или БД.
+
+### Постоянный запуск через systemd
+
+Следующие действия выполняются на Linux-сервере с systemd. Создайте системного пользователя и каталоги при первой установке:
+
+```sh
+sudo useradd --system --home-dir /var/lib/max-bot --shell /usr/sbin/nologin max-bot
+sudo install -d /opt/max-bot
+sudo install -d -o max-bot -g max-bot /var/lib/max-bot
+sudo install -m 0755 build/server/max_bot /opt/max-bot/max_bot
+sudo install -m 0600 /dev/null /etc/max-bot.env
+sudoedit /etc/max-bot.env
+```
+
+Содержимое `/etc/max-bot.env`:
+
+```ini
+BOT_TOKEN=YOUR_MAX_BOT_TOKEN
+PORT=8080
+```
+
+Создайте `/etc/systemd/system/max-bot.service`:
+
+```ini
+[Unit]
+Description=MAX bot server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=max-bot
+Group=max-bot
+WorkingDirectory=/var/lib/max-bot
+EnvironmentFile=/etc/max-bot.env
+ExecStart=/opt/max-bot/max_bot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Включите службу:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now max-bot
+sudo systemctl status max-bot
+sudo journalctl -u max-bot -f
+```
+
+После изменения исходников пересоберите проект, остановите службу, замените бинарный файл и запустите её снова:
+
+```sh
+cmake --build build/server --config Release --parallel
+sudo systemctl stop max-bot
+sudo install -m 0755 build/server/max_bot /opt/max-bot/max_bot
+sudo systemctl start max-bot
+```
+
+## Развёртывание frontend
+
+Установите Node.js 22 и npm. Из корня проекта:
+
+```sh
+cd frontend
+npm ci
+cp .env.example .env
+```
+
+Переменные frontend:
+
+| Переменная | Назначение |
+| --- | --- |
+| `BACKEND_URL` | Адрес API, добавляемый перед `/api/...`, и цель dev-прокси; оставьте пустым для одного домена с frontend |
+| `ADMIN_PASSWORD` | Пароль клиентской демонстрационной формы входа в админ-панель |
+| `VITE_API_TARGET` | Резервная цель dev-прокси, если `BACKEND_URL` пуст; по умолчанию `http://localhost:8080` |
+| `VITE_PORT` | Порт Vite при разработке; по умолчанию `5173` |
+
+Значения `VITE_*`, а также `BACKEND_URL` и `ADMIN_PASSWORD`, перечисленные в `envPrefix` Vite, встраиваются при сборке и доступны браузеру. `ADMIN_PASSWORD` не обеспечивает серверную авторизацию; токен `BOT_TOKEN` туда помещать нельзя. Изменение переменных требует новой сборки frontend.
+
+Для одного домена задайте в `.env`:
+
+```dotenv
+BACKEND_URL=
+ADMIN_PASSWORD=YOUR_DEMO_ADMIN_PASSWORD
+```
+
+Соберите статику:
+
+```sh
+npm run build
+```
+
+Результат находится в `frontend/dist`. Для публикации отдавайте содержимое этого каталога через nginx или статический хостинг. `npm run preview` предназначен для локального просмотра сборки, а не постоянного размещения приложения. Подробнее: [развёртывание Vite](https://vite.dev/guide/static-deploy.html).
+
+### Пример nginx: frontend и API на одном домене
+
+Команды снова выполняются из корня проекта:
+
+```sh
+sudo apt-get install -y nginx
+sudo install -d /var/www/max-bot
+sudo cp -a frontend/dist/. /var/www/max-bot/
+```
+
+Создайте `/etc/nginx/sites-available/max-bot`, заменив `app.example.com` своим доменом:
+
+```nginx
+server {
+    listen 80;
+    server_name app.example.com;
+    root /var/www/max-bot;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+У `proxy_pass` здесь нет завершающего `/`: путь `/api/ping` передаётся серверу целиком. См. [документацию nginx](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass).
+
+Включите конфигурацию при первой установке:
+
+```sh
+sudo ln -s /etc/nginx/sites-available/max-bot /etc/nginx/sites-enabled/max-bot
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Направьте DNS домена на сервер и настройте HTTPS-сертификат на nginx или внешнем прокси перед публикацией мини-приложения. Публичный трафик направляйте через прокси; внутренний порт `8080` ограничьте правилами сети. Ссылка открытия приложения сейчас задана в `server/bot_logic.cpp` через заглушку `https://vercel.app` — замените её адресом размещённого приложения.
+
+При локальном `npm run dev` прокси в `frontend/vite.config.ts` сохраняет префикс `/api`. С пустым `BACKEND_URL` браузер обращается к Vite, а прокси перенаправляет запросы на `VITE_API_TARGET` или `http://localhost:8080`.
+
+## Подключение базы данных
+
+SQLite работает с локальным файлом, отдельный сервер БД не нужен. Подключение создаётся кодом:
 
 ```cpp
 #include "Database.h"
 
+Database db("application.db");
+```
+
+Путь считается от текущей рабочей директории. При указанной выше службе systemd относительный файл будет находиться в `/var/lib/max-bot`. Каталог должен существовать и быть доступен пользователю процесса для записи. Файл храните вне каталога сборки и сохраняйте при обновлении приложения. Параметра окружения `DB_PATH` в проекте пока нет — путь передаётся конструктору.
+
+`Database` создаёт таблицы `users`, `documents` и индекс документов при первом открытии. Старая схема `users` с колонкой `id` несовместима: конструктор вернёт ошибку без изменения прежних данных. Автоматической миграции нет; используйте новый файл или подготовьте перенос отдельно.
+
+Внутренние функции:
+
+| Функция | Ответственность |
+| --- | --- |
+| `Database(filename)` | Открывает соединение, проверяет и создаёт схему |
+| `~Database()` | Закрывает соединение без исключений |
+| `createTables()` | Проверяет схему и создаёт недостающие таблицы и индекс в одной транзакции |
+| `validateSchema()` | Проверяет имена и типы столбцов, `NOT NULL` и первичные ключи |
+| `throwError(operation)` | Формирует `std::runtime_error` с контекстом и сообщением SQLite |
+| Внутренняя обёртка `Statement` | Подготавливает SQL, связывает параметры, читает результат и освобождает statement |
+
+Остальной код обращается только к публичным методам `Database`. Копирование объекта запрещено; если один экземпляр используется несколькими потоками, обращения необходимо защищать внешним mutex.
+
+### Пользователи: User и методы Database
+
+| Поле C++ | Колонка SQLite | Назначение |
+| --- | --- | --- |
+| `std::int64_t userId` | `user_id` | ID из MAX; задаётся кодом вручную |
+| `std::string lastName` | `last_name` | Фамилия |
+| `std::string firstName` | `first_name` | Имя |
+| `std::string patronymic` | `patronymic` | Отчество |
+| `std::string address` | `address` | Адрес |
+| `std::string snils` | `snils` | СНИЛС |
+| `std::string email` | `email` | Почта |
+| `std::string passport` | `passport` | Паспорт одной строкой |
+| `std::optional<std::string> universityId` | `university_id` | Код вуза, например `msu`; `std::nullopt` означает SQL `NULL` |
+| `std::string updatedAt` | `updated_at` | Назначаемое SQLite время UTC в ISO 8601 |
+
+ФИО хранится раздельно. Метод `User::fullName()` соединяет непустые части пробелами; столбца `full_name` нет. Текст передаётся в UTF-8, пустое отчество допустимо. СНИЛС и паспорт сохраняют ведущие нули. Проверки их формата и уникальности нет.
+
+| Публичный метод | Что делает |
+| --- | --- |
+| `bool addUser(const User& user)` | Вставляет пользователя; при повторном `userId` возвращает `false`, не перезаписывая запись |
+| `std::optional<User> getUser(std::int64_t id)` | Возвращает пользователя или `std::nullopt` |
+| `bool updateUser(const User& user)` | Обновляет личные данные, вуз и время по `user.userId`; возвращает `false`, если записи нет |
+| `bool deleteUser(std::int64_t id)` | Удаляет пользователя; возвращает `false`, если записи нет |
+| `bool userExists(std::int64_t id)` | Проверяет наличие пользователя |
+| `std::vector<User> getAllUsers()` | Возвращает всех пользователей без гарантии порядка |
+
+`user_id` — `INTEGER PRIMARY KEY` без `AUTOINCREMENT`; ID всегда передаётся явно. Входное значение `updatedAt` игнорируется: при вставке и обновлении время назначает SQLite, например `2026-09-27T10:15:30.123Z`. Чтобы получить новое время, перечитайте запись. Для снятия выбора вуза передайте `universityId = std::nullopt`.
+
+### Документы: Document и методы Database
+
+| Поле C++ | Колонка SQLite | Назначение |
+| --- | --- | --- |
+| `std::int64_t id` | `id` | ID, назначаемый SQLite |
+| `std::string universityId` | `university_id` | Непустой код вуза |
+| `DocumentCategory category` | `category` | `Mandatory` → `mandatory`; `Additional` → `additional` |
+| `std::string title` | `title` | Название |
+| `std::string description` | `description` | Описание |
+| `int order` | `order` | Порядок отображения |
+| `std::string url` | `url` | Ссылка на Госуслуги |
+
+| Публичный метод | Что делает |
+| --- | --- |
+| `std::int64_t addDocument(const Document& document)` | Вставляет документ и возвращает созданный ID; входной `document.id` игнорируется |
+| `std::optional<Document> getDocument(std::int64_t id)` | Возвращает документ или `std::nullopt` |
+| `bool updateDocument(const Document& document)` | Обновляет все поля кроме ID по `document.id`; возвращает `false`, если записи нет |
+| `bool deleteDocument(std::int64_t id)` | Удаляет документ; возвращает `false`, если записи нет |
+| `std::vector<Document> getDocuments(const std::string& universityId, std::optional<DocumentCategory> category = std::nullopt)` | Возвращает документы вуза, при необходимости отфильтрованные по категории |
+
+`getDocuments` сортирует результат по `order`, затем по `id` по возрастанию. В SQL имя `"order"` заключено в кавычки. Создаётся индекс `(university_id, category, "order", id)`.
+
+ID документа назначается через `INTEGER PRIMARY KEY` без `AUTOINCREMENT`; после удаления ID может использоваться повторно. Переданный объект `addDocument` не изменяет — сохраните возвращённый ID самостоятельно. Категория ограничена двумя значениями через `CHECK`. Формат URL модуль не проверяет.
+
+В БД нет таблицы-справочника вузов и внешних ключей. Коды для интерфейса перечислены в `frontend/src/lib/universities.ts`, например `msu` и `bmstu`. Удаление пользователя не удаляет документы, а удаление документа не изменяет пользователей.
+
+### Результаты и ошибки
+
+- Пустая выборка возвращается как `std::nullopt` или пустой вектор.
+- Обновление существующей записи прежними значениями возвращает `true`.
+- Технические ошибки SQLite и несовместимая схема вызывают `std::runtime_error`.
+- Пустой код вуза в операциях с документами и недопустимая категория вызывают `std::invalid_argument`.
+- Перед разыменованием результата `getUser` или `getDocument` проверяйте `optional`.
+
+### Пример работы с БД
+
+```cpp
+#include "Database.h"
+#include <exception>
 #include <iostream>
-#include <stdexcept>
 
 int main()
 {
     try
     {
-        Database db("users.db");
-        User user{
-            5000000000LL,
-            "Ivanov",
-            "Alex",
-            "",
-            "Amsterdam",
-            "001-002-003 04",
-            "alex@example.test",
-            "0012 003456"
-        };
+        Database db("application.db");
+
+        User user;
+        user.userId = 5000000000LL;
+        user.lastName = "Ivanov";
+        user.firstName = "Alex";
+        user.address = "Amsterdam";
+        user.snils = "001-002-003 04";
+        user.email = "alex@example.com";
+        user.passport = "0012 003456";
+        user.universityId = "msu";
 
         if (!db.addUser(user))
             std::cout << "User already exists\n";
 
-        if (auto loaded = db.getUser(user.id))
+        if (auto loaded = db.getUser(user.userId))
         {
-            std::cout << loaded->id << ": " << loaded->firstName << '\n';
+            std::cout << loaded->fullName() << '\n';
             loaded->address = "Rotterdam";
             if (!db.updateUser(*loaded))
                 std::cout << "User no longer exists\n";
         }
 
-        std::cout << "Exists: " << db.userExists(user.id) << '\n';
-        std::cout << "Total users: " << db.getAllUsers().size() << '\n';
+        Document document;
+        document.universityId = "msu";
+        document.category = DocumentCategory::Mandatory;
+        document.title = "Application";
+        document.order = 1;
+        document.url = "https://www.gosuslugi.ru/";
+        document.id = db.addDocument(document);
 
-        // db.deleteUser(user.id);
+        if (auto loaded = db.getDocument(document.id))
+        {
+            loaded->description = "Updated instructions";
+            if (!db.updateDocument(*loaded))
+                std::cout << "Document no longer exists\n";
+        }
+
+        for (const auto& item : db.getDocuments("msu", DocumentCategory::Mandatory))
+            std::cout << item.order << ": " << item.title << '\n';
+
+        if (!db.deleteDocument(document.id))
+            std::cout << "Document no longer exists\n";
     }
-    catch (const std::runtime_error& error)
+    catch (const std::exception& error)
     {
         std::cerr << error.what() << '\n';
         return 1;
@@ -140,19 +378,11 @@ int main()
 }
 ```
 
-Если `example.cpp` расположен рядом с `server/CMakeLists.txt`, добавьте в конец этого файла:
+Для отдельного примера сохраните код в `server/example.cpp` и добавьте в конец `server/CMakeLists.txt`:
 
 ```cmake
 add_executable(database_example example.cpp)
 target_link_libraries(database_example PRIVATE database)
 ```
 
-Цель `database` передаёт потребителю путь к заголовкам и требование C++17; зависимость SQLite учитывается при линковке.
-
-## Выполненные проверки модуля
-
-Полная сборка `max_bot` проверена на Windows с GCC 16.2.0, CMake 4.4.3 и SQLite 3.53.4. Модуль также скомпилирован с `-Wall -Wextra -Wpedantic -Werror`.
-
-Локальная тестовая программа выполнила 591 проверку: CRUD всех полей, дубликаты, отсутствующие записи, повторное открытие, 64-битные ID, Unicode, кавычки, пустые строки, ведущие нули, ошибки открытия, блокировки и восстановления после ошибок. После завершения объём выделенной SQLite памяти вернулся к исходному значению; файлы баз удалось удалить после закрытия соединений.
-
-Тестовая программа, тестовые базы и переносимые инструменты использовались вне репозитория и не входят в его состав. Встроенная CTest-цель для этих проверок пока не добавлена.
+Затем соберите цель `database_example`. Она получает заголовки, C++17 и зависимость SQLite через цель `database`.

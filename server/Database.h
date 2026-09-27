@@ -1,6 +1,7 @@
 #pragma once
 
 #include "User.h"
+#include "Document.h"
 
 #include <optional>
 #include <string>
@@ -28,11 +29,21 @@ public:
     bool userExists(std::int64_t id);
     std::vector<User> getAllUsers();
 
+    // The input ID is ignored; SQLite assigns and returns a new ID.
+    std::int64_t addDocument(const Document& document);
+    std::optional<Document> getDocument(std::int64_t id);
+    bool updateDocument(const Document& document);
+    bool deleteDocument(std::int64_t id);
+    std::vector<Document> getDocuments(
+        const std::string& universityId,
+        std::optional<DocumentCategory> category = std::nullopt);
+
 private:
     class Statement;
 
     sqlite3* db = nullptr;
 
     void createTables();
+    void validateSchema();
     [[noreturn]] void throwError(const char* operation) const;
 };
