@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getHistory, getApplications, applicationProgress } from "../lib/history";
 import { fetchUser, ApiError } from "../api/client";
-import { useMaxBridge } from "../bridge/useMaxBridge";
+import { useMaxBridge, getUserId } from "../lib/maxbridge";
 import { useTheme } from "../lib/theme";
-import { getUserId } from "../lib/session";
 import EmptyState from "../components/EmptyState";
 
 interface Row {

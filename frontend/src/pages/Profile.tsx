@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchUser, saveProfile, fetchUniversityDocuments, ApiError } from "../api/client";
 import type { DocumentsResponse, UserProfile } from "../api/types";
-import { getUserId } from "../lib/session";
+import { getUserId } from "../lib/maxbridge";
 import { UNIVERSITIES } from "../lib/universities";
 import { useTheme } from "../lib/theme";
 import EmptyState from "../components/EmptyState";

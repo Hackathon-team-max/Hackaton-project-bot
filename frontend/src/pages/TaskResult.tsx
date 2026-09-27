@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMaxBridge } from "../bridge/useMaxBridge";
+import { useMaxBridge } from "../lib/maxbridge";
 import { getApplication, applicationProgress } from "../lib/history";
 import EmptyState from "../components/EmptyState";
 
