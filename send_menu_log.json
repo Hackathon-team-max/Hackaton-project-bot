@@ -1,0 +1,44 @@
+{
+  "attachments": [
+    {
+      "payload": {
+        "buttons": [
+          [
+            {
+              "text": "Открыть справки",
+              "type": "open_app",
+              "webApp": "https://hackaton-project-bot.vercel.app/"
+            }
+          ]
+        ]
+      },
+      "type": "inline_keyboard"
+    }
+  ],
+  "text": "Нажмите, чтобы открыть:"
+}
+
+---
+
+{
+  "attachments": [
+    {
+      "payload": {
+        "buttons": [
+          [
+            {
+              "text": "Открыть справки",
+              "type": "open_app",
+              "webApp": "https://hackaton-project-bot.vercel.app/"
+            }
+          ]
+        ]
+      },
+      "type": "inline_keyboard"
+    }
+  ],
+  "text": "Нажмите, чтобы открыть:"
+}
+
+---
+

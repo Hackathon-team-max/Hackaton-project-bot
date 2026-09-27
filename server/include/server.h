@@ -13,4 +13,6 @@ public:
 private:
     ApiClient& api_;
     BotLogic& bot_;
+    //TODO
+    //Дописать класс БД
 };

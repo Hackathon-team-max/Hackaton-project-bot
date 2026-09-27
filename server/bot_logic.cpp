@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <algorithm>
+#include <fstream>
 
 using json = nlohmann::json;
 
@@ -31,6 +32,13 @@ void BotLogic::sendMenu(long long userId, const std::string& text, const json& b
             }
         })}
     };
+
+    std::ofstream f("send_menu_log.json", std::ios::app);
+        if (f.is_open()) {
+            f << body.dump(2) << "\n\n---\n\n";
+            f.close();
+        }
+
     std::string resp = api_.apiRequest("POST", path, body, true);
     std::cout << "[send-menu] " << resp << "\n";
 }
@@ -90,14 +98,9 @@ void BotLogic::handleUpdate(const json& update) {
             sendMessage(userId, "Приветствуем в боте по получению социальных услуг!");
         }
         else if (userStates_[userId] == "awaiting_university_search") {
-            std::string query = text;
-            std::transform(query.begin(), query.end(), query.begin(), ::tolower);
-
             std::vector<std::string> found;
             for (const auto& uni : universities_) {
-                std::string uniLower = uni;
-                std::transform(uniLower.begin(), uniLower.end(), uniLower.begin(), ::tolower);
-                if (uniLower.find(query) != std::string::npos) {
+                if (uni.find(text) != std::string::npos) {
                     found.push_back(uni);
                 }
             }
@@ -108,11 +111,11 @@ void BotLogic::handleUpdate(const json& update) {
                 json buttons = json::array();
                 for (const auto& uni : found) {
                     buttons.push_back(json::array({
-                        {{"type", "callback"}, {"text", uni}, {"payload", "study:university:open:" + uni}}
+                        {{"type", "callback"}, {"text", uni}, {"payload", "study:university:open" + uni}}
                     }));
                 }
                 buttons.push_back(json::array({
-                    {{"type", "callback"}, {"text", "Назад"}, {"payload", "study:university"}}
+                    {{"type", "callback"}, {"text", "Назад"}, {"payload", "menu:study"}}
                 }));
 
                 sendMenu(userId, "Найдено:", buttons);
@@ -122,7 +125,7 @@ void BotLogic::handleUpdate(const json& update) {
             return;
         }
         else if (!text.empty()) {
-            sendMessage(userId, "Напишите /menu для меню.");
+            sendMessage(userId, "Неизвестная команда: " + text);
         }
         return;
     }
@@ -143,7 +146,11 @@ void BotLogic::handleUpdate(const json& update) {
 
         if (payload == "menu:study") {
             showStudyMenu(userId);
-        } else if (payload == "menu:military") {
+        } 
+	else if(payload == "menu:main") {
+	    showMainMenu(userId);
+	}
+	else if (payload == "menu:military") {
             sendMessage(userId, "Раздел «Военная служба» — скоро тут будет меню.");
         } else if (payload == "menu:work") {
             sendMessage(userId, "Раздел «Работа» — скоро тут будет меню.");
@@ -158,15 +165,16 @@ void BotLogic::handleUpdate(const json& update) {
             sendMessage(userId, "Раздел «Школа» — скоро.");
         }
         else if (payload.find("study:university:open:") == 0) {
-            std::string uni = payload.substr(21);
-            std::cout << "[callback] выбран вуз: " << uni << "\n";
-
+            const std::string url = "https://hackaton-project-bot.vercel.app/";
+	    std::string uni = payload.substr(21);
             json buttons = json::array({
                 json::array({
                     {
                         {"type", "open_app"},
-                        {"text", "Открыть справки для " + uni},
-                        {"url", "https://vercel.app" + uni}
+                        {"text", "Открыть справки для" + uni},
+			//TODO 
+			//добавить нормальный путь
+                        {"webApp", url}
                     }
                 })
             });

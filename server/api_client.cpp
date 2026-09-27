@@ -35,10 +35,15 @@ std::string ApiClient::apiRequest(const std::string& method,
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 
         std::string payload;
+
         if (isPost) {
             payload = body.dump();
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
         }
+
+	if(method == "PATCH") {
+	    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+	}
 
         CURLcode res = curl_easy_perform(curl);
         if (res != CURLE_OK && res != CURLE_OPERATION_TIMEDOUT) {
