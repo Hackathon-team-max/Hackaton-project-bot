@@ -10,9 +10,12 @@
 #include <chrono>
 #include <cstdint>
 #include <regex>
+#include "include/Database.h"
+#include "include/User.h"
+#include "include/Document.h"
 
-AppServer::AppServer(ApiClient& apiClient, BotLogic& botLogic) 
-    : api_(apiClient), bot_(botLogic) {}
+AppServer::AppServer(ApiClient& apiClient, BotLogic& botLogic, Database& database)
+    : api_(apiClient), bot_(botLogic), db_(database) {}
 
 void AppServer::startRestServer() {
     std::thread serverThread([this]() {
@@ -31,130 +34,126 @@ void AppServer::startRestServer() {
         svr.Get("/api/ping", [](const httplib::Request&, httplib::Response& res) {
             res.set_content("{\"ok\":true}", "application/json");
         });
-	
-	svr.Get(R"(/api/user/(\d+))", [](const httplib::Request& req, httplib::Response& res) {
+
+	svr.Get(R"(/api/user/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
     	    std::string userIdStr = req.matches[1].str();
     	    long long userId = std::stoll(userIdStr);
-	    nlohmann::json responseJson;
-	    //TODO
-    	    if (userId == 375115529) {
-        	responseJson = {
-            	    {"exists", true},
-            	    {"user_id", userId},
-            	    {"full_name", "Иванов Иван Иванович"},
-            	    {"address", "г. Москва, ул. Ленина, 5"},
-            	    {"snils", "123-456-789 00"},
-            	    {"email", "ivan@mail.ru"},
-            	    {"passport", "1234 567890"},
-            	    {"university_id", "bmstu"}
-        	};
-    	    } else {
-        	responseJson = {
-            	    {"exists", false},
-            	    {"user_id", userId}
-        	};
-    	    }
+			nlohmann::json responseJson;
+
+			std::lock_guard<std::mutex> lock(dbMutex_);
+			auto userOpt = db_.getUser(userId);
+
+			if (userOpt.has_value()) {
+				const User& u = userOpt.value();
+			    responseJson = nlohmann::json{
+					{"exists", true},
+					{"user_id", u.userId},
+					{"full_name", u.fullName()},
+					{"address", u.address},
+					{"snils", u.snils},
+					{"email", u.email},
+					{"passport", u.passport},
+					{"university_id", u.universityId.value_or("")}
+				};
+			} else {
+			    responseJson = {
+					{"exists", false},
+					{"user_id", userId}
+				};
+			}
             res.set_content(responseJson.dump(), "application/json");
         });
 	
-	svr.Post("/api/user/profile", [](const httplib::Request& req, httplib::Response& res) {
+	svr.Post("/api/user/profile", [this](const httplib::Request& req, httplib::Response& res) {
             nlohmann::json responseJson;
     	    try {
-        	auto body = nlohmann::json::parse(req.body);
+        	    auto body = nlohmann::json::parse(req.body);
 
-        	if (!body.contains("user_id") || body["user_id"].is_null()) {
-            	    res.status = 400;
+        	    if (!body.contains("user_id") || body["user_id"].is_null()) {
+			        res.status = 400;
             	    responseJson = {{"error", "user_id is required"}};
-        	} else {
-		    //TODO
-		    long long userId = body["user_id"].get<long long>();
-            
-            	    std::string fullName   = body.value("full_name", "");
-            	    std::string address    = body.value("address", "");
-            	    std::string snils      = body.value("snils", "");
-		    std::string email      = body.value("email", "");
-            	    std::string passport   = body.value("passport", "");
-            	    std::string university = body.value("university_id", "");
+        	    } else {
+		            long long userId = body["user_id"].get<long long>();
+				    User u;
+				    u.userId = userId;
 
-            	    responseJson = {{"ok", true}};
-        	}
+				    std::string fullName = body.value("full_name", "");
+				    u.lastName = fullName;
+				    u.firstName = "";
+				    u.patronymic = "";
+
+				    u.address    = body.value("address", "");
+				    u.snils      = body.value("snils", "");
+				    u.email      = body.value("email", "");
+				    u.passport   = body.value("passport", "");
+
+				    if (body.contains("university_id") && !body["university_id"].is_null()) {
+					    u.universityId = body["university_id"].get<std::string>();
+				    }
+
+				    std::lock_guard<std::mutex> lock(dbMutex_);
+				    if (db_.userExists(userId)) {
+					    db_.updateUser(u);
+				    } else {
+					    db_.addUser(u);
+				    }
+
+				    responseJson = {{"ok", true}};
+
+			    }
     	    } catch (const std::exception& e) {
-        	res.status = 400;
-        	responseJson = {{"error", "Invalid JSON format"}};
+        	    res.status = 400;
+        	    responseJson = {{"error", "Invalid JSON format"}};
     	    }
     	    res.set_content(responseJson.dump(), "application/json");
 	});
 
 	svr.Get(R"(/api/universities/([^/]+)/documents)", [this](const httplib::Request& req, httplib::Response& res) {
-    	    std::string uniId = req.matches[1].str();
+	    std::string uniId = req.matches[1].str();
 
-	    nlohmann::json mandatoryArray = nlohmann::json::array();
-    	    nlohmann::json additionalArray = nlohmann::json::array();
+		nlohmann::json mandatoryArray = nlohmann::json::array();
+		nlohmann::json additionalArray = nlohmann::json::array();
 
-	    //TODO
-/*
-   	    auto mandatoryRows = [];
-    
-    	    for (const auto& row : mandatoryRows) {
-            
-                std::string title = row.get_string("title");
-                std::string desc  = row.get_string("description");
-                std::string url   = row.get_string("url");
+		std::vector<Document> allDocs;
+		{
+			std::lock_guard<std::mutex> lock(dbMutex_);
+			allDocs = db_.getDocuments(uniId);
+		}
 
-        
-                nlohmann::json doc = {
-            	    {"title", title},
-            	    {"description", desc.empty() ? std::string() : desc},
-            	    {"url", url.empty() ? std::string() : url}
-                };
+		for (const auto& doc : allDocs) {
+			nlohmann::json jsonDoc = {
+				{"title", doc.title},
+				{"description", doc.description},
+				{"url", doc.url}
+			};
 
-                mandatoryArray.push_back(doc);
-            }
-	
-	    //TODO
-	    auto additionalRows = [];
-    
-    	    for (const auto& row : additionalRows) {
-        	std::string title = row.get_string("title");
-        	std::string desc  = row.get_string("description");
-        	std::string url   = row.get_string("url");
+			if (doc.category == DocumentCategory::Mandatory) {
+				mandatoryArray.push_back(jsonDoc);
+			} else if (doc.category == DocumentCategory::Additional) {
+				additionalArray.push_back(jsonDoc);
+			}
+		}
 
-        	nlohmann::json doc = {
-            	    {"title", title},
-            	    {"description", desc.empty() ? std::string() : desc},
-                    {"url", url.empty() ? std::string() : url}
-        	};
+		nlohmann::json responseJson = {
+			{"title", "Документы для поступления"},
+			{"university_id", uniId},
+			{"university_name", uniId == "bmstu" ? "МГТУ им. Н.Э. Баумана" : "Другой ВУЗ"},
+			{"description", "Уже начался приём заявлений..."},
+			{"mandatory", mandatoryArray},
+			{"additional", additionalArray}
+		};
 
-        
-        	additionalArray.push_back(doc);
-    	    }
-
-
-	    nlohmann::json responseJson = {
-        	{"title", "Документы для поступления"},
-        	{"university_id", uniId},
-        
-        	{"university_name", uniId == "bmstu" ? "МГТУ им. Н.Э. Баумана" : "Другой ВУЗ"},
-        	{"description", "Уже начался приём заявлений..."},
-        
-        
-        	{"mandatory", mandatoryArray},
-        	{"additional", additionalArray}
-    	    };
-
-    	    res.set_content(responseJson.dump(), "application/json");
-*/
+		res.set_content(responseJson.dump(), "application/json");
 	});
 
+	const char* portEnv = std::getenv("PORT");
+	int port = portEnv ? std::stoi(portEnv) : 8080;
 
-        const char* portEnv = std::getenv("PORT");
-        int port = portEnv ? std::stoi(portEnv) : 8080;
+	std::cout << "[rest] Server started on 0.0.0.0:" << port << "\n";
+	svr.listen("0.0.0.0", port);
+	});
 
-        std::cout << "[rest] Server started on 0.0.0.0:" << port << "\n";
-        svr.listen("0.0.0.0", port);
-    });
-    
-    serverThread.detach();
+	serverThread.detach();
 }
 
 void AppServer::startLongPolling() {

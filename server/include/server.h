@@ -1,11 +1,15 @@
 #pragma once
 
+#include <mutex>
+
 class ApiClient;
 class BotLogic;
+class Database;
+
 
 class AppServer {
 public:
-    AppServer(ApiClient& apiClient, BotLogic& botLogic);
+    AppServer(ApiClient& apiClient, BotLogic& botLogic, Database& database);
 
     void startRestServer();
     void startLongPolling();
@@ -13,6 +17,6 @@ public:
 private:
     ApiClient& api_;
     BotLogic& bot_;
-    //TODO
-    //Дописать класс БД
+    Database& db_;
+    std::mutex dbMutex_;
 };

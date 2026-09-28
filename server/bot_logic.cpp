@@ -111,7 +111,7 @@ void BotLogic::handleUpdate(const json& update) {
                 json buttons = json::array();
                 for (const auto& uni : found) {
                     buttons.push_back(json::array({
-                        {{"type", "callback"}, {"text", uni}, {"payload", "study:university:open" + uni}}
+                        {{"type", "callback"}, {"text", uni}, {"payload", "study:university:open:" + uni}}
                     }));
                 }
                 buttons.push_back(json::array({
@@ -166,7 +166,7 @@ void BotLogic::handleUpdate(const json& update) {
         }
         else if (payload.find("study:university:open:") == 0) {
             const std::string url = "https://hackaton-project-bot.vercel.app/";
-	    std::string uni = payload.substr(21);
+	    std::string uni = payload.substr(22);
             json buttons = json::array({
                 json::array({
                     {
