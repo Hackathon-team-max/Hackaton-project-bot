@@ -31,8 +31,10 @@ std::string ApiClient::apiRequest(const std::string& method,
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
 
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+	curl_easy_setopt(curl, CURLOPT_CAINFO, "russiantrustedca.pem");
+
+        //curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        //curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 
         std::string payload;
 
