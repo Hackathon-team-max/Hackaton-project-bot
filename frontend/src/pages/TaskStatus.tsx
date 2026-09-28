@@ -1,25 +1,100 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { getApplication, saveApplication, applicationProgress, type Application } from "../lib/history";
+import { ApiError } from "../api/errors";
+import type { Application, DocumentsResponse } from "../api/types";
+import { applicationRepository } from "../repositories/applications";
+import { documentRepository } from "../repositories/documents";
+import { applicationProgress, buildChecklist, type ChecklistItem } from "../lib/checklist";
 import ProgressBar from "../components/ProgressBar";
 import EmptyState from "../components/EmptyState";
+import { Skeleton } from "../components/Skeleton";
 
 export default function TaskStatus() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const [app, setApp] = useState<Application | null>(() => getApplication(id) ?? null);
+  const [app, setApp] = useState<Application | null>(null);
+  const [docs, setDocs] = useState<DocumentsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggle = (index: number) => {
+  // Заявка — из repository (preview: localStorage, production: API);
+  // документы чеклиста — только из реального API, в заявке не хранятся.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    applicationRepository
+      .getApplication(id)
+      .then((a) => {
+        if (cancelled) return;
+        setApp(a);
+        return documentRepository
+          .getDocuments(a.universityId)
+          .then((d) => {
+            if (!cancelled) setDocs(d);
+          })
+          .catch((e: ApiError) => {
+            if (!cancelled) setError(e.userMessage);
+          });
+      })
+      .catch((e: ApiError) => {
+        if (!cancelled) setError(e.userMessage);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  const toggle = (item: ChecklistItem) => {
     setApp((prev) => {
       if (!prev) return prev;
-      const next: Application = {
-        ...prev,
-        items: prev.items.map((it, i) => (i === index ? { ...it, done: !it.done } : it)),
-      };
-      saveApplication(next);
+      const checked = new Set(prev.checkedDocuments);
+      if (checked.has(item.title)) checked.delete(item.title);
+      else checked.add(item.title);
+      const next: Application = { ...prev, checkedDocuments: [...checked] };
+      applicationRepository
+        .updateApplication(next.id, next.checkedDocuments)
+        .catch((e: ApiError) => setError(e.userMessage));
       return next;
     });
   };
+
+  if (loading) {
+    return (
+      <div className="page">
+        <Link to="/" className="back-link">
+          ‹ На главную
+        </Link>
+        <Skeleton h={28} w="65%" />
+        <div style={{ height: 8 }} />
+        <Skeleton h={16} w="50%" />
+        <div style={{ height: 16 }} />
+        <Skeleton h={92} r={12} />
+        <div style={{ height: 12 }} />
+        <Skeleton h={92} r={12} />
+      </div>
+    );
+  }
+
+  if (error && !app) {
+    return (
+      <div className="page">
+        <EmptyState
+          icon="🗂️"
+          title="Заявка не найдена"
+          subtitle={error}
+          action={
+            <Link className="btn btn-primary" to="/">
+              На главную
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   if (!app) {
     return (
@@ -38,7 +113,8 @@ export default function TaskStatus() {
     );
   }
 
-  const { progress, done, total, finished } = applicationProgress(app);
+  const items = docs ? buildChecklist(app, docs) : [];
+  const { progress, done, total, finished } = applicationProgress(items);
 
   return (
     <div className="page">
@@ -47,8 +123,15 @@ export default function TaskStatus() {
       </Link>
       <h1 className="page-title">Чеклист документов</h1>
       <p className="page-sub">
-        {app.title} · {app.universityName} · {new Date(app.createdAt).toLocaleString("ru-RU")}
+        {app.title} · {app.universityName} · {new Date(app.submittedAt).toLocaleString("ru-RU")}
+        {app.status === "submitted" && <span className="text-ok"> · Заявка подана</span>}
       </p>
+
+      {!docs && error && (
+        <p className="page-sub" role="alert">
+          Не удалось загрузить документы: {error}
+        </p>
+      )}
 
       <ProgressBar value={progress} />
       <p className="page-sub">
@@ -57,14 +140,14 @@ export default function TaskStatus() {
       </p>
 
       <div className="list">
-        {app.items.map((it, i) => (
+        {items.map((it, i) => (
           <div className={`card action-card check-item${it.done ? " is-done" : ""}`} key={i}>
             <input
               type="checkbox"
               className="check-box"
               id={`doc-${i}`}
               checked={it.done}
-              onChange={() => toggle(i)}
+              onChange={() => toggle(it)}
             />
             <div className="action-body">
               <label className="action-title" htmlFor={`doc-${i}`}>

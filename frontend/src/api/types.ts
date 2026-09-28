@@ -77,3 +77,42 @@ export interface DocumentsResponse {
   mandatory: DocumentItem[];
   additional: DocumentItem[];
 }
+
+// --- Вуз (админ CRUD, repository layer) ---
+
+export interface University {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+}
+
+
+// --- Заявка на поступление (repository layer: preview — localStorage, production — HTTP) ---
+
+export type ApplicationStatus = "draft" | "submitted";
+
+/**
+ * Заявка на поступление. НЕ хранит документы — чеклист документов
+ * собирается из реального API по universityId (см. repositories/documents).
+ * Хранит только состояние отмеченных документов (checkedDocuments — заголовки).
+ */
+export interface Application {
+  id: string;
+  universityId: string;
+  universityName: string;
+  title: string;
+  status: ApplicationStatus;
+  /** ISO-строка даты подачи. */
+  submittedAt: string;
+  /** Заголовки отмеченных (пройденных) документов чеклиста. */
+  checkedDocuments: string[];
+}
+
+export interface SubmitApplicationRequest {
+  universityId: string;
+  universityName: string;
+  title: string;
+}
+
+

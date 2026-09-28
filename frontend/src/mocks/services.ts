@@ -1,4 +1,4 @@
-import type { Service, ServiceDetail, Task } from "./types";
+import type { Service, ServiceDetail, Task } from "../api/types";
 
 const SERVICES: Service[] = [
   {

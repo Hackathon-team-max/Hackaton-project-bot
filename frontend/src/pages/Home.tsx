@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getHistory, getApplications, applicationProgress } from "../lib/history";
-import { fetchUser, ApiError } from "../api/client";
-import { useMaxBridge, getUserId } from "../lib/maxbridge";
+import { getHistory } from "../storage/taskHistory";
+import type { Application } from "../api/types";
+import { applicationRepository } from "../repositories/applications";
+import { userRepository } from "../repositories/users";
+import { ApiError } from "../api/errors";
+import { useMaxBridge, getUserId } from "../integrations/max/MaxBridge";
 import { useTheme } from "../lib/theme";
 import EmptyState from "../components/EmptyState";
 
@@ -15,7 +18,7 @@ interface Row {
 
 const STATUS_LABEL = {
   run: { text: "В работе", cls: "run" },
-  ok: { text: "Готово", cls: "ok" },
+  ok: { text: "Заявка подана", cls: "ok" },
 };
 
 export default function Home() {
@@ -23,11 +26,24 @@ export default function Home() {
   const { theme, toggle } = useTheme();
   // Данные профиля — из БД бэкенда
   const [fullName, setFullName] = useState<string>("");
+  // Заявки — из repository (preview: localStorage, production: API)
+  const [apps, setApps] = useState<Application[]>([]);
 
   useEffect(() => {
+    // Заявки грузим всегда — независимо от наличия MAX-моста
+    // (вне MAX user_id нет, но preview-заглушка заявок должна быть видна).
+    applicationRepository
+      .getApplications()
+      .then(setApps)
+      .catch((e: ApiError) => console.warn(e.message));
+  }, []);
+
+  useEffect(() => {
+    // Имя профиля — только при известном user_id из MAX-моста.
     const userId = getUserId();
     if (userId === null) return;
-    fetchUser(userId)
+    userRepository
+      .getUser(userId)
       .then((res) => {
         if (res.exists) setFullName(res.full_name);
       })
@@ -36,16 +52,14 @@ export default function Home() {
       });
   }, []);
 
-  // Заявки — чеклисты документов (локальное хранилище, бэкенда пока нет)
-  const apps = getApplications();
-  const appIds = new Set(apps.map((a) => a.taskId));
+  const appIds = new Set(apps.map((a) => a.id));
   const legacy = getHistory().filter((h) => !appIds.has(h.taskId));
   const rows: Row[] = [
     ...apps.map((a) => ({
-      taskId: a.taskId,
+      taskId: a.id,
       title: a.title,
-      subtitle: `${a.universityName} · ${new Date(a.createdAt).toLocaleString("ru-RU")}`,
-      status: applicationProgress(a).finished ? ("ok" as const) : ("run" as const),
+      subtitle: `${a.universityName} · ${new Date(a.submittedAt).toLocaleString("ru-RU")}`,
+      status: (a.status === "submitted" ? "ok" : "run") as "run" | "ok",
     })),
     ...legacy.map((h) => ({
       taskId: h.taskId,
