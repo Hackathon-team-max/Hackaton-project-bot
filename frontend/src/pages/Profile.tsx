@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { fetchUser, saveProfile, fetchUniversityDocuments, ApiError } from "../api/client";
+import { ApiError } from "../api/errors";
 import type { DocumentsResponse, UserProfile } from "../api/types";
-import { getUserId } from "../lib/maxbridge";
+import { userRepository } from "../repositories/users";
+import { documentRepository } from "../repositories/documents";
+import { getUserId } from "../integrations/max/MaxBridge";
 import { UNIVERSITIES } from "../lib/universities";
 import { useTheme } from "../lib/theme";
 import EmptyState from "../components/EmptyState";
@@ -35,7 +37,8 @@ export default function Profile() {
     if (userId === null) return;
     setLoading(true);
     setLoadError(null);
-    fetchUser(userId)
+    userRepository
+      .getUser(userId)
       .then((res) => {
         if (res.exists) {
           setExists(true);
@@ -81,7 +84,8 @@ export default function Profile() {
     let cancelled = false;
     setDocsLoading(true);
     setDocsError(null);
-    fetchUniversityDocuments(uni)
+    documentRepository
+      .getDocuments(uni)
       .then((d) => {
         if (!cancelled) setDocs(d);
       })
@@ -112,7 +116,7 @@ export default function Profile() {
     setSaved(false);
     setSaveError(null);
     try {
-      await saveProfile({ user_id: userId, ...form });
+      await userRepository.saveProfile(userId, form);
       setExists(true);
       setSaved(true);
     } catch (err) {

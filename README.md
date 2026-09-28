@@ -226,6 +226,78 @@ sudo systemctl reload nginx
 
 При локальном `npm run dev` прокси в `frontend/vite.config.ts` сохраняет префикс `/api`. С пустым `BACKEND_URL` браузер обращается к Vite, а прокси перенаправляет запросы на `VITE_API_TARGET` или `http://localhost:8080`.
 
+### Команды frontend
+
+Все команды выполняются из каталога `frontend/`:
+
+| Команда | Назначение |
+| --- | --- |
+| `npm ci` | Установка зависимостей из lock-файла (для разработки — `npm install`) |
+| `npm run dev` | Dev-сервер Vite с HMR; по умолчанию `http://localhost:5173` |
+| `npm run build` | Проверка типов (`tsc`) и продакшен-сборка в `dist/` |
+| `npm run preview` | Локальный просмотр уже собранного `dist/` |
+| `npx tsc --noEmit` | Только проверка типов без сборки |
+
+Минимальный цикл после клонирования:
+
+```sh
+cd frontend
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+### Режимы: Preview и Production
+
+Режим задаётся переменной окружения `VITE_APP_MODE` (значение `preview` или `production`; по умолчанию — `preview`) и читается ровно в одном месте — `frontend/src/config/app.ts`. Остальной код узнаёт режим через слой репозиториев и не проверяет переменную самостоятельно. Изменение режима требует перезапуска dev-сервера или пересборки.
+
+| Данные | Preview | Production |
+| --- | --- | --- |
+| Пользователь (`/api/user/...`) | Реальный API | Реальный API |
+| Документы вуза (`/api/universities/:id/documents`) | Реальный API | Реальный API |
+| Заявки (список, подача, чеклист) | localStorage, ключ `max_preview_applications` | HTTP `/api/applications` |
+| Каталог услуг и админ-изменения | localStorage, ключи `max_custom_services` и `max_tasks_history` | HTTP `/api/services` |
+
+В Preview при первом обращении в localStorage записываются seed-данные: заявка «Документы для поступления» (МГТУ им. Н.Э. Баумана) и список вузов (`max_preview_universities`). Документы в заявке не хранятся — чеклист всегда запрашивает их у backend по `universityId`, поэтому актуальность списка обеспечивает сервер.
+
+В Production fallback на mock отсутствует: если endpoint ещё не реализован на бэкенде, пользователь видит сообщение об ошибке, а не тихо получает демо-данные. Это намеренно — такие ошибки видно до релиза.
+
+Сброс preview-данных: очисти ключи `max_preview_*` в localStorage браузера (DevTools → Application → Local Storage), seed запишется заново при следующем открытии.
+
+### Архитектура frontend
+
+Слойность по направлению «страница → репозиторий → источник данных»; React-компоненты не знают, откуда пришли данные:
+
+```text
+frontend/src/
+├── api/            # Только HTTP: client.ts (запросы), errors.ts (ApiError), types.ts (типы API)
+├── config/app.ts   # Единственное чтение VITE_APP_MODE
+├── repositories/   # Выбор реализации по режиму: applications, documents, services, universities, users
+├── storage/        # Ключи и чтение/запись localStorage (preview-репозитории)
+├── mocks/          # Seed-данные preview-режима (заявки, вузы, услуги)
+├── integrations/max/ # MAX Bridge: window.WebApp, user_id, отправка сообщений в бот
+├── lib/            # Чеклисты, тема, схемы форм, справочник вузов
+├── pages/          # Страницы-роуты (в т.ч. pages/admin/ — админка)
+└── components/     # Переиспользуемые UI-примитивы
+```
+
+Правило добавления данных: новый источник подключается в `repositories/<entity>/` двумя реализациями (`mock` для preview, `real` для production) и фабрикой в `index.ts` по `appMode`. Запросы к HTTP — только через `api/client.ts`, mock-данные — только в `mocks/`.
+
+### Маршруты
+
+Роутинг hash-based (`HashRouter`), приложение работает на статическом хостинге без server-side редиректов.
+
+| Путь | Страница |
+| --- | --- |
+| `/#/` | Главная: профиль, список заявок и истории |
+| `/#/profile` | Профиль и документы выбранного вуза |
+| `/#/service/:id` | Документы вуза и подача заявки (сюда же ведёт deep-link бота `/#/?service=<id>`) |
+| `/#/task/:id` | Чеклист документов заявки |
+| `/#/task/:id/result` | Результаты чеклиста |
+| `/#/admin`, `/#/admin/login` | Админ-панель (демо-вход, см. `ADMIN_PASSWORD`) |
+
+Приложение открывается и вне MAX: без моста пользователь называется «Гость», профиль не подгружается, но остальная навигация и preview-данные работают.
+
 ## Подключение базы данных
 
 SQLite работает с локальным файлом, отдельный сервер БД не нужен. Подключение создаётся кодом:

@@ -1,15 +1,65 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMaxBridge } from "../lib/maxbridge";
-import { getApplication, applicationProgress } from "../lib/history";
+import { useMaxBridge } from "../integrations/max/MaxBridge";
+import { ApiError } from "../api/errors";
+import type { Application, DocumentsResponse } from "../api/types";
+import { applicationRepository } from "../repositories/applications";
+import { documentRepository } from "../repositories/documents";
+import { applicationProgress, buildChecklist } from "../lib/checklist";
 import EmptyState from "../components/EmptyState";
+import { Skeleton } from "../components/Skeleton";
 
 export default function TaskResult() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { sendMessageToBot } = useMaxBridge();
   const [sent, setSent] = useState(false);
-  const app = getApplication(id);
+  const [app, setApp] = useState<Application | null>(null);
+  const [docs, setDocs] = useState<DocumentsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Заявка — из repository; документы чеклиста — только из реального API.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    applicationRepository
+      .getApplication(id)
+      .then((a) => {
+        if (cancelled) return;
+        setApp(a);
+        return documentRepository
+          .getDocuments(a.universityId)
+          .then((d) => {
+            if (!cancelled) setDocs(d);
+          })
+          .catch((e: ApiError) => {
+            if (!cancelled) setError(e.userMessage);
+          });
+      })
+      .catch((e: ApiError) => {
+        if (!cancelled) setError(e.userMessage);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="page">
+        <Skeleton h={64} w={64} r={32} />
+        <div style={{ height: 16 }} />
+        <Skeleton h={28} w="60%" />
+        <div style={{ height: 8 }} />
+        <Skeleton h={40} r={12} />
+      </div>
+    );
+  }
 
   if (!app) {
     return (
@@ -17,7 +67,7 @@ export default function TaskResult() {
         <EmptyState
           icon="🗂️"
           title="Заявка не найдена"
-          subtitle="Откройте её из раздела «Мои заявки»"
+          subtitle={error || "Откройте её из раздела «Мои заявки»"}
           action={
             <Link className="btn btn-primary" to="/">
               На главную
@@ -28,8 +78,9 @@ export default function TaskResult() {
     );
   }
 
-  const { progress, done, total, finished } = applicationProgress(app);
-  const missing = app.items.filter((it) => it.required && !it.done);
+  const items = docs ? buildChecklist(app, docs) : [];
+  const { progress, done, total, finished } = applicationProgress(items);
+  const missing = items.filter((it) => it.required && !it.done);
 
   return (
     <div className="page result-page">
@@ -41,6 +92,12 @@ export default function TaskResult() {
           : `Обязательных документов без отметки: ${missing.length}`}
       </p>
 
+      {error && (
+        <p className="page-sub center" role="alert">
+          {error}
+        </p>
+      )}
+
       <div className="card result-card">
         <div className="result-row">
           <span>Вуз</span>
@@ -48,7 +105,11 @@ export default function TaskResult() {
         </div>
         <div className="result-row">
           <span>Заявка</span>
-          <strong>#{app.taskId}</strong>
+          <strong>#{app.id}</strong>
+        </div>
+        <div className="result-row">
+          <span>Статус</span>
+          <strong>{app.status === "submitted" ? "Заявка подана" : "Черновик"}</strong>
         </div>
         <div className="result-row">
           <span>Прогресс</span>

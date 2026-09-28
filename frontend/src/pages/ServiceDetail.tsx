@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { fetchUniversityDocuments, ApiError } from "../api/client";
+import { ApiError } from "../api/errors";
 import type { DocumentItem, DocumentsResponse } from "../api/types";
-import { makeApplication, saveApplication, addHistory } from "../lib/history";
+import { documentRepository } from "../repositories/documents";
+import { applicationRepository } from "../repositories/applications";
+import { addHistory } from "../storage/taskHistory";
 import EmptyState from "../components/EmptyState";
 import { Skeleton } from "../components/Skeleton";
 
@@ -30,34 +32,37 @@ export default function ServiceDetailPage() {
   const [docs, setDocs] = useState<DocumentsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     setDocs(null);
     setError(null);
     setLoading(true);
-    fetchUniversityDocuments(id)
+    documentRepository
+      .getDocuments(id)
       .then(setDocs)
       .catch((e: ApiError) => setError(e.userMessage))
       .finally(() => setLoading(false));
   }, [id]);
 
-  const onCreateApplication = () => {
+  const onCreateApplication = async () => {
     if (!docs) return;
-    const app = makeApplication(
-      docs.university_id,
-      docs.university_name,
-      docs.title,
-      docs.mandatory,
-      docs.additional
-    );
-    saveApplication(app);
-    addHistory({
-      taskId: app.taskId,
-      serviceId: app.universityId,
-      serviceTitle: app.title,
-      createdAt: app.createdAt,
-    });
-    navigate(`/task/${app.taskId}`);
+    try {
+      const app = await applicationRepository.submitApplication({
+        universityId: docs.university_id,
+        universityName: docs.university_name,
+        title: docs.title,
+      });
+      addHistory({
+        taskId: app.id,
+        serviceId: app.universityId,
+        serviceTitle: app.title,
+        createdAt: Date.parse(app.submittedAt),
+      });
+      navigate(`/task/${app.id}`);
+    } catch (e) {
+      setSubmitError((e as ApiError).userMessage || "Не удалось подать заявку");
+    }
   };
 
   if (loading) {
@@ -138,6 +143,11 @@ export default function ServiceDetailPage() {
           Мои ссылки и рекомендации
         </Link>
       </div>
+      {submitError && (
+        <p className="page-sub" role="alert">
+          {submitError}
+        </p>
+      )}
       <p className="page-sub">
         После подачи заявка появится в разделе «Мои заявки» — внутри чеклист документов.
       </p>
