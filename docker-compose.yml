@@ -3,6 +3,8 @@ version: '3.8'
 services:
   backend:
     build: ./server
+    # Имя для Docker Hub: `docker compose push` (локально) / `pull` (на сервере).
+    image: nikiforovi/max-bot-backend:latest
     environment:
       BOT_TOKEN: ${BOT_TOKEN:?Задайте BOT_TOKEN — BOT_TOKEN=... docker compose up -d}
     volumes:
@@ -14,6 +16,8 @@ services:
 
   frontend:
     build: ./frontend
+    # Имя для Docker Hub: `docker compose push` (локально) / `pull` (на сервере).
+    image: nikiforovi/max-bot-frontend:latest
     expose:
       - "4173"
     environment:

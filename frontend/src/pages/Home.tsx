@@ -74,7 +74,7 @@ export default function Home() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Помощник</h1>
+        <h1 className="page-title">DocFlow</h1>
         <button type="button" className="theme-toggle" onClick={toggle} aria-label="Переключить тему">
           {theme === "dark" ? "🌙" : "☀️"}
         </button>

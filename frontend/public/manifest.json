@@ -1,6 +1,6 @@
 {
-  "name": "Помощник",
-  "short_name": "Помощник",
+  "name": "DocFlow",
+  "short_name": "DocFlow",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#f5f6f8",
