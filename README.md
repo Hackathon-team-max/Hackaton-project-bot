@@ -166,5 +166,3 @@ docker-compose up -d
    * **`upsert-user-profile`:** Отправляет `POST /api/user/profile` с динамической переменной тестового пользователя платформы `"${userId}"`. Ожидает успешную запись. Метод `extract` сохраняет ID пользователя в переменную `savedUserId`.
    * **`read-user-profile`:** Динамически вызывает `GET /api/user/{userId}`, подставляя из памяти `savedUserId`. Жестко сверяет структуру всех 8 полей ответа из SQLite (`exists`, `passport`, `snils` и т.д.).
    * **`get-university-documents`:** Запрашивает `GET /api/universities/bmstu/documents` по домену `https://noscam.accesscam.org`. Проверяет корректность выдачи массивов `mandatory` и `additional`.
-
----
