@@ -1,0 +1,29 @@
+services:
+  backend:
+    build: ./server
+    environment:
+      # Обязателен: без него main() завершает процесс с ошибкой.
+      # Запуск: BOT_TOKEN=ваш_токен docker compose up -d
+      BOT_TOKEN: ${BOT_TOKEN:?Задайте BOT_TOKEN — BOT_TOKEN=... docker compose up -d}
+    volumes:
+      # application.db создаётся в WORKDIR контейнера (/var/lib/max-bot);
+      # при первом создании том получает из образа и russiantrustedca.pem
+      - db-data:/var/lib/max-bot
+      # PEM поверх тома: при обновлении образа подхватывается новый файл,
+      # а не «замораживается» в созданном ранее томе
+      - ./server/russiantrustedca.pem:/var/lib/max-bot/russiantrustedca.pem:ro
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "4173:4173" # vite preview
+    environment:
+      # Прокси /api из `vite preview` переадресует запросы контейнеру backend
+      VITE_API_TARGET: http://backend:8080
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  db-data:

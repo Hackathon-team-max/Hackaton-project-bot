@@ -40,6 +40,10 @@ RUN chmod +x /opt/max-bot/max_bot
 USER max-bot
 WORKDIR /var/lib/max-bot
 
+# api_client.cpp задаёт CURLOPT_CAINFO="russiantrustedca.pem" (путь относительно
+# рабочего каталога процесса) — без файла long polling к MAX API не работает.
+COPY --chown=max-bot:max-bot russiantrustedca.pem /var/lib/max-bot/
+
 EXPOSE 8080
 
 CMD ["/opt/max-bot/max_bot"]
