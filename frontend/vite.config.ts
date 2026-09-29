@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: Number(env.VITE_PORT) || 5173,
       strictPort: true,
+      allowedHosts: ["noscam.accesscam.org"],
       proxy: {
         "/api": {
           // Роуты бэкенда идут с префиксом /api — путь не переписываем
