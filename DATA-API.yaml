@@ -5,7 +5,7 @@ solution:
   teamId: "82"
 
 api:
-  baseUrl: "https://vercel.app"
+  baseUrl: "https://noscam.accesscam.org/"
   openapi: "./openapi.yaml"
   defaultHeaders:
     Accept: "application/json"
