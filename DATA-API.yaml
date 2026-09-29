@@ -1,0 +1,104 @@
+schemaVersion: "1.0"
+
+solution:
+  name: "DocFlow"
+  teamId: "82"
+
+api:
+  baseUrl: "https://vercel.app"
+  openapi: "./openapi.yaml"
+  defaultHeaders:
+    Accept: "application/json"
+
+checks:
+  - id: "health"
+    name: "Проверка доступности сервера"
+    description: "Проверяет базовый ответ rest-сервера"
+    method: "GET"
+    path: "/api/ping"
+    role: "public"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["ok"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "upsert-user-profile"
+    name: "Сохранение профиля студента"
+    description: "Записывает или обновляет персональные данные пользователя в SQLite"
+    method: "POST"
+    path: "/api/user/profile"
+    role: "user"
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        user_id: "${userId}"
+        full_name: "Иванов Иван Иванович"
+        address: "г. Москва, ул. Ленина, 5"
+        snils: "123-456-789 00"
+        email: "ivan@mail.ru"
+        passport: "1234 567890"
+        university_id: "bmstu"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["ok"]
+    timeoutMs: 5000
+    repeatable: true
+    extract:
+      savedUserId: "$.user_id"
+
+  - id: "read-user-profile"
+    name: "Чтение данных профиля студента"
+    description: "Проверяет, что сохраненный пользователь корректно отдается из SQLite"
+    method: "GET"
+    path: "/api/user/{userId}"
+    role: "user"
+    dependsOn: ["upsert-user-profile"]
+    request:
+      path:
+        userId: "${savedUserId}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["exists", "user_id", "full_name", "address", "snils", "email", "passport", "university_id"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "get-university-documents"
+    name: "Получение списка документов для МГТУ"
+    description: "Запрашивает отсортированные по order обязательные и дополнительные справки"
+    method: "GET"
+    path: "/api/universities/{universityId}/documents"
+    role: "public"
+    request:
+        path:
+            universityId: "bmstu"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["title", "university_id", "university_name", "description", "mandatory", "additional"]
+    timeoutMs: 5000
+    repeatable: true
+
+cleanup:
+  - id: "cleanup-test-user"
+    method: "POST"
+    path: "/api/user/profile"
+    role: "user"
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        user_id: "${savedUserId}"
+        full_name: ""
+        address: ""
+        snils: ""
+        email: ""
+        passport: ""
+        university_id: ""
+    expected:
+      statusCodes: [200]
+    timeoutMs: 5000

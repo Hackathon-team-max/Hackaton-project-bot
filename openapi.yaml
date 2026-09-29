@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: DocFlow API
+  description: REST API сервера социального бота
+  version: 1.0.0
+paths:
+  /api/ping:
+    get:
+      summary: Проверка доступности сервера
+      responses:
+        '200':
+          description: Сервер успешно ответил
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /api/user/profile:
+    post:
+      summary: Создание или обновление профиля пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: string
+                full_name:
+                  type: string
+                address:
+                  type: string
+                snils:
+                  type: string
+                email:
+                  type: string
+                passport:
+                  type: string
+                university_id:
+                  type: string
+      responses:
+        '200':
+          description: Данные успешно сохранены или обновлены
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          description: Ошибка валидации JSON или отсутствует user_id
+
+  /api/user/{userId}:
+    get:
+      summary: Получение профиля пользователя по ID
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Информация о пользователе
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists:
+                    type: boolean
+                  user_id:
+                    type: integer
+                  full_name:
+                    type: string
+                  address:
+                    type: string
+                  snils:
+                    type: string
+                  email:
+                    type: string
+                  passport:
+                    type: string
+                  university_id:
+                    type: string
+
+  /api/universities/{universityId}/documents:
+    get:
+      summary: Получение отсортированного списка документов вуза
+      parameters:
+        - name: universityId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список обязательных и дополнительных документов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title:
+                    type: string
+                  university_id:
+                    type: string
+                  university_name:
+                    type: string
+                  description:
+                    type: string
+                  mandatory:
+                    type: array
+                    items:
+                      type: object
+                  additional:
+                    type: array
+                    items:
+                      type: object
