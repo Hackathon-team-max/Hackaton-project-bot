@@ -22,131 +22,112 @@
 
 ## 🏗️ 3. Состав и архитектура решения
 
-Проект построен по **модульной** **многослойной** **архитектуре**:
-**Caddy** — **единственная** **точка** **входа** **снаружи** (**HTTPS**),
-**Frontend** (**React + Vite**) — **статика** **мини-аппа**,
-**Backend** (**C++17**) — **REST API** **+** **Long Polling**,
-**SQLite** — **хранение** **данных**.
+Проект DocFlow спроектирован по **модульной многослойной архитектуре** с изоляцией сетевых контуров и сквозным HTTPS-шифрованием. **Caddy** выступает в роли единственной авторизованной точки входа, полностью скрывая внутреннюю инфраструктуру приложения от внешнего мира.
 
 ```mermaid
-graph TB
-    subgraph USER["📱 Пользователь"]
-        MAX["MAX (мессенджер)<br/>Чат + мини-апп"]
+graph LR
+    %% Слой Клиента и Внешних Платформ
+    subgraph Слой Платформы [Внешнее окружение]
+        MAX_UI["📱 MAX Client<br/>(Чат + WebApp UI)"]
+        MAX_API["☁️ MAX API<br/>(platform-api2.max.ru)"]
     end
 
-    subgraph INTERNET["🌐 Интернет"]
-        CADDY["🔒 Caddy<br/>HTTPS :443<br/>Let's Encrypt"]
+    %% Входной защитный периметр
+    subgraph Периметр Безопасности [Шлюз шифрования]
+        CADDY["🔒 Caddy Proxy<br/>(:80 ──> :443 HTTPS)<br/>Let's Encrypt"]
     end
 
-    subgraph VPS["🖥️ VPS (Docker Compose)"]
-        FRONT["🌐 Frontend<br/>React + Vite<br/>:4173"]
-        BACK["⚙️ Backend (C++17)<br/>:8080"]
-        DB[("💾 SQLite<br/>/var/lib/max-bot/bot.db")]
-
-        subgraph BACK_INNER["Backend: два потока"]
-            REST["REST API<br/>httplib + ThreadPool"]
-            LP["Long Polling<br/>libcurl"]
+    %% Изолированный Docker контур
+    subgraph Docker-Инфраструктура [Внутренний контур: docflow-network]
+        FRONT["🌐 Frontend Node.js<br/>(React + Vite статика)<br/>Внутренний порт :4173"]
+        
+        subgraph C++ Сервер [Высокопроизводительный бэкенд]
+            REST["Слой REST API<br/>(httplib + ThreadPool)<br/>Порт :8080"]
+            LP["Модуль Long Polling<br/>(libcurl транспорт)"]
         end
+        
+        DB[("💾 СУБД SQLite3<br/>(/var/lib/max-bot/bot.db)")]
     end
 
-    subgraph MAX_API["☁️ MAX API"]
-        API["platform-api2.max.ru<br/>HTTPS"]
-    end
+    %% Потоки управления трафиком
+    MAX_UI -->|1. HTTPS: Открыть WebApp| CADDY
+    CADDY -->|2. HTTP: reverse-proxy| FRONT
+    FRONT -->|3. HTTP: vite proxy /api/*| REST
+    
+    REST <-->|5. Безопасный DAL / Mutex| DB
+    LP <-->|5. Асинхронный сидинг / Выборка| DB
+    
+    LP <-->|4. HTTPS: Удержание Long Polling| MAX_API
+    MAX_API <-->|Синхронизация| MAX_UI
 
-    MAX -->|"1. HTTPS<br/>открыть мини-апп"| CADDY
-    CADDY -->|"2. HTTP<br/>проксирование"| FRONT
-    FRONT -->|"3. HTTP /api/*<br/>vite proxy"| BACK
-    BACK --> DB
-    REST -.->|часть| BACK
-    LP -.->|часть| BACK
-    LP <-->|"4. HTTPS<br/>Long Polling + sendMessage"| API
-    API <-->|"5. HTTPS<br/>бот ↔ MAX"| MAX
+    %% Профессиональная стилизация графа
+    classDef layer fill:#f6f8fa,stroke:#d0d7de,stroke-width:1px,color:#24292f
+    classDef client fill:#24292e,stroke:#fff,stroke-width:2px,color:#fff
+    classDef proxy fill:#1f883d,stroke:#fff,stroke-width:2px,color:#fff
+    classDef container fill:#0969da,stroke:#fff,stroke-width:2px,color:#fff
+    classDef cpp fill:#bc4c00,stroke:#fff,stroke-width:2px,color:#fff
+    classDef storage fill:#6e7781,stroke:#fff,stroke-width:2px,color:#fff
+    classDef cloud fill:#8250df,stroke:#fff,stroke-width:2px,color:#fff
 
-    classDef user fill:#24292e,stroke:#fff,stroke-width:2px,color:#fff
-    classDef caddy fill:#1f883d,stroke:#fff,stroke-width:2px,color:#fff
-    classDef front fill:#0969da,stroke:#fff,stroke-width:2px,color:#fff
-    classDef back fill:#bc4c00,stroke:#fff,stroke-width:2px,color:#fff
-    classDef db fill:#6e7781,stroke:#fff,stroke-width:2px,color:#fff
-    classDef api fill:#8250df,stroke:#fff,stroke-width:2px,color:#fff
-
-    class MAX user
-    class CADDY caddy
-    class FRONT front
-    class BACK,REST,LP back
-    class DB db
-    class API api
+    class Слой Платформы,Периметр Безопасности,Docker-Инфраструктура,Бэкенд-архитектура layer
+    class MAX_UI client
+    class CADDY proxy
+    class FRONT container
+    class REST,LP cpp
+    class DB storage
+    class MAX_API cloud
 ```
 
 ---
 
-### Компоненты решения
+### 📦 Компоненты экосистемы
 
 #### 🌐 Frontend (React 18 + Vite + TypeScript)
+* **Роль:** Интерактивный пользовательский интерфейс, работающий внутри инлайн-контекста мессенджера MAX.
+* **Изоляция:** Полностью скрыт внутри закрытой сети `docflow-network`. Прямой доступ из внешней сети заблокирован.
+* **Транспорт:** Продакшн-сборка `dist/` раздается встроенным легковесным сервером на порту `4173`.
+* **Маршрутизация:** Конфигурация Vite `server.proxy` перехватывает запросы `/api/*` и локально пересылает их на внутренний хост `backend:8080`.
 
-* **Назначение:** интерфейс мини-приложения внутри MAX.
-* **Сборка:** multi-stage Docker build — `npm run build` → `dist/`.
-* **Запуск:** Node.js отдаёт статику из `dist/` на порту `4173`.
-* **Прокси:** Vite `server.proxy` перенаправляет `/api/*` на `backend:8080`.
-* **Сеть:** только внутри `docflow-network`, наружу не торчит.
+#### ⚙️ Backend (C++17 Высокопроизводительный сервер)
+Архитектура сервера разделена на **два параллельных асинхронных контура**:
+1. **REST API Сетевой слой:** Потокобезопасный HTTP-сервер на базе `httplib` (порт `8080`). Управляет пулом рабочих потоков. Обработка конкурентных запросов к данным защищена с помощью `std::mutex`. Все SQL-операции используют подготовленные выражения (`Prepared Statements`) для полной защиты от SQL-инъекций.
+2. **Модуль Long Polling:** Изолированный фоновый поток на базе `libcurl`. Удерживает постоянный HTTPS-канал связи с `platform-api2.max.ru` для мгновенного захвата сообщений пользователей (`message_callback`) и отправки ответных транзакционных сообщений (`sendMessage`).
 
-#### ⚙️ Backend (C++17)
+#### 🔒 Caddy Proxy (Входной защитный барьер)
+* **Назначение:** Единый доверенный шлюз, принимающий внешние сетевые запросы на домен `noscam.accesscam.org`.
+* **Криптография:** Автоматически запрашивает, валидирует и обновляет SSL/TLS сертификаты безопасности от центра Let's Encrypt.
+* **Маршрутизация:** Прослушивает порты `80` (автоматический апгрейд протокола до безопасного) и `443` (HTTPS), направляя очищенный трафик на `frontend:4173`.
 
-Совмещает **два независимых параллельных контура**:
-
-**1. REST API (сетевой слой):**
-* HTTP-сервер на `httplib`, порт `8080`.
-* Пул рабочих потоков.
-* Эндпоинты: `/api/ping`, `/api/user/:id`, `/api/user/profile`, `/api/universities/:id/documents`.
-* Доступ к SQLite защищён `std::mutex`.
-* Prepared Statements — защита от SQL-инъекций.
-
-**2. Модуль Long Polling:**
-* Отдельный поток, `libcurl`.
-* Соединение с `platform-api2.max.ru` через HTTPS.
-* Получение сообщений от пользователей в чате MAX.
-* Отправка ответов (`sendMessage`).
-* Обработка кнопок (`message_callback`).
-
-#### 🔒 Caddy (3-й контейнер)
-
-* **Единственные ворота наружу.**
-* **HTTPS** — автоматический сертификат от **Let's Encrypt**.
-* **Порты:** `80` (редирект на 443), `443` (HTTPS).
-* **Домен:** `noscam.accesscam.org`.
-* **Прокси:** все запросы → `frontend:4173`.
-
-#### 💾 Database (SQLite3)
-
-* Файл `/var/lib/max-bot/bot.db`.
-* Volume `db-data` — сохранение между рестартами.
-* Prepared Statements + транзакции при создании таблиц.
-* Автоматическая проверка схемы при старте.
+#### 💾 Database Layer (СУБД SQLite3)
+* **Хранилище:** Локальный файл базы данных `/var/lib/max-bot/bot.db`.
+* **Надежность:** Подключен через постоянный Docker-volume (`db-data`), что гарантирует 100% сохранность данных студентов при любых обновлениях кода или перезапусках сервера.
+* **Валидация:** При каждом старте контейнера СУБД выполняет автоматический контроль целостности схемы данных и транзакционный сидинг эталонных записей.
 
 ---
 
-### Потоки данных
+### 📡 Сводная карта сетевых потоков
 
-| # | От | К | Протокол | Что |
-|---|---|---|---|---|
-| **1** | Пользователь | MAX | HTTPS | Открывает бота |
-| **2** | MAX | Caddy | HTTPS | Открывает мини-апп по URL |
-| **3** | Caddy | Frontend | HTTP | Проксирование статики |
-| **4** | Frontend | Backend | HTTP | `/api/*` через vite proxy |
-| **5** | Backend | SQLite | — | SELECT/INSERT |
-| **6** | Backend | MAX API | HTTPS | Long Polling + sendMessage |
+| Шаг | Направление трафика | Протокол | Назначение |
+| :---: | :--- | :---: | :--- |
+| **1** | `MAX Client` ──> `Caddy Proxy` | **HTTPS (443)** | Безопасный вызов мини-аппа пользователем по домену |
+| **2** | `Caddy Proxy` ──> `Frontend` | **HTTP (4173)** | Внутреннее проксирование статических файлов интерфейса |
+| **3** | `Frontend` ──> `Backend C++` | **HTTP (8080)** | Перенаправление роутов `/api/*` через внутренний прокси Vite |
+| **4** | `Backend C++` <──> `SQLite3` | **Нативный API** | Высокоскоростное чтение и запись анкет (Prepared Statements) |
+| **5** | `Backend C++` <──> `MAX API` | **HTTPS (443)** | Непрерывный Long Polling цикл и отправка системных ответов |
 
 ---
 
-### Команда запуска
+### 🚀 Архитектурный старт проекта
+
+Для полного развертывания всех трех изолированных контейнеров бэкенда, фронтенда и прокси Caddy на боевом сервере достаточно выполнить одну команду:
 
 ```bash
-BOT_TOKEN=... docker compose up -d
+BOT_TOKEN=ваш_секретный_токен docker compose up -d
 ```
 
-После запуска:
-- **Caddy** — получает сертификат автоматически (~30 сек).
-- **Мини-апп** — доступен по `https://noscam.accesscam.org`.
-- **Бот** — работает через Long Polling.
+* **Автоматизация SSL:** В течение 30 секунд Caddy завершит верификацию домена и выдаст валидный TLS-сертификат.
+* **Доступность:** Сервис будет доступен в защищенном режиме по адресу `https://noscam.accesscam.org`.
+
 
 ## 🐋 4. Быстрый запуск (Docker-compose)
 
